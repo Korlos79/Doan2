@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<LOG_ROOT>
+	<PROJECT NAME="RISCV_Pipelined_IFM_AXI4_OoO_v2">
+		<CBX_INST_ENTRY INSTANCE_NAME="|fpu_top|fp_div_goldschmidt:unit_div|altshift_taps:tag_pipe_rtl_1" CBX_FILE_NAME="shift_taps_ufm.tdf"/>
+		<CBX_INST_ENTRY INSTANCE_NAME="|fpu_top|fp_div_goldschmidt:unit_div|div_lut_rom:lut_inst|altsyncram:Ram0_rtl_0" CBX_FILE_NAME="altsyncram_ph91.tdf"/>
+		<CBX_INST_ENTRY INSTANCE_NAME="|fpu_top|addition_subtraction:unit_sub|lpm_add_sub:Add3" CBX_FILE_NAME="add_sub_9ri.tdf"/>
+		<CBX_INST_ENTRY INSTANCE_NAME="|fpu_top|fp_div_goldschmidt:unit_div|altshift_taps:exp_corr_s1_rtl_0" CBX_FILE_NAME="shift_taps_tfm.tdf"/>
+		<CBX_INST_ENTRY INSTANCE_NAME="|fpu_top|fp_div_goldschmidt:unit_div|altshift_taps:tag_pipe_rtl_0" CBX_FILE_NAME="shift_taps_fem.tdf"/>
+		<CBX_INST_ENTRY INSTANCE_NAME="|fpu_top|fp_div_goldschmidt:unit_div|fp_fma:fma_N1_inst|altshift_taps:result_rtl_0" CBX_FILE_NAME="shift_taps_s1m.tdf"/>
+	</PROJECT>
+</LOG_ROOT>

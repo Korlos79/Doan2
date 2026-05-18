@@ -1,0 +1,117 @@
+module fu_alu_wrapper #(
+    parameter DATA_WIDTH = 32,
+    parameter TAG_WIDTH  = 3
+)(
+    input wire clk, rst_n,
+    
+    // --- Giao diện với Reservation Station ---
+    input wire                   start,        // Lệnh từ RS bắn sang
+    input wire [4:0]             opcode,
+    input wire [31:0]            op1, op2,
+    input wire [2:0]             branch_op,
+    input wire [TAG_WIDTH-1:0]   tag_in,       // Tag của lệnh đang vào
+    
+    output wire                  busy,         // Báo ngược lại RS: "Đang bận chia, đừng gửi nữa"
+
+    // --- Giao diện với CDB Arbiter ---
+    output reg                   cdb_valid,    // Yêu cầu phát kết quả
+    output reg [DATA_WIDTH-1:0]  cdb_result,   // Kết quả
+    output reg [TAG_WIDTH-1:0]   cdb_tag,      // Tag tương ứng
+    input  wire                  cdb_ack       // Arbiter báo: "Đã nhận"
+);
+
+    // 1. Instantiate ALU Gốc
+    wire [31:0] alu_res_w;
+    wire        alu_z_w;
+    wire        alu_busy_w;
+    wire        alu_done_w;
+
+    alu ALU_CORE (
+        .clk(clk), .rst_n(rst_n),
+        .A(op1), .B(op2), .opcode(opcode), .branch(branch_op),
+        .result(alu_res_w), .Z(alu_z_w), .busy(alu_busy_w), .done(alu_done_w)
+    );
+
+    // Báo bận nếu ALU đang bận (DIV)
+    assign busy = alu_busy_w; 
+
+    // 2. Phân loại lệnh để quản lý Tag
+    // Cần khớp với bảng mã opcode trong alu.v
+    wire is_mul = (opcode >= 9 && opcode <= 12);
+    wire is_div = (opcode >= 13 && opcode <= 16);
+    wire is_base = !is_mul && !is_div;
+
+    // 3. Cơ chế lưu trữ Tag (Tag Tracking)
+    
+    // A. Cho lệnh Pipeline (MUL) - Dùng FIFO/Shift Register độ sâu 4
+    reg [TAG_WIDTH-1:0] mul_tag_fifo [0:3];
+    reg [3:0]           mul_valid_fifo;
+    
+    integer i;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) mul_valid_fifo <= 0;
+        else begin
+            // Đẩy vào đầu
+            mul_valid_fifo <= {mul_valid_fifo[2:0], (start && is_mul)};
+            mul_tag_fifo[0] <= tag_in;
+            // Dịch chuyển
+            for(i=1; i<4; i=i+1) mul_tag_fifo[i] <= mul_tag_fifo[i-1];
+        end
+    end
+
+    // B. Cho lệnh Blocking (DIV) - Dùng thanh ghi đơn
+    reg [TAG_WIDTH-1:0] div_tag_reg;
+    always @(posedge clk) if (start && is_div) div_tag_reg <= tag_in;
+
+    // C. Cho lệnh Basic (ADD) - Dùng thanh ghi đơn (Delay 1 nhịp để đồng bộ CDB)
+    reg [TAG_WIDTH-1:0] base_tag_reg;
+    reg                 base_valid_reg;
+    reg [31:0]          base_res_reg;
+    
+    always @(posedge clk or negedge rst_n) begin
+        if(!rst_n) base_valid_reg <= 0;
+        else begin
+            if (start && is_base) begin
+                base_valid_reg <= 1;
+                base_tag_reg   <= tag_in;
+                base_res_reg   <= alu_res_w; // Kết quả có ngay lập tức từ ALU
+            end else if (cdb_ack && cdb_valid && !alu_done_w) begin 
+                // Nếu đã được CDB nhận và không phải là MUL/DIV done chen ngang
+                base_valid_reg <= 0;
+            end
+        end
+    end
+
+    // 4. Logic chọn đầu ra (Output Mux)
+    always @(*) begin
+        cdb_valid  = 0;
+        cdb_result = 0;
+        cdb_tag    = 0;
+
+        // Ưu tiên 1: Kết quả từ MUL/DIV (Do alu_done_w bật lên)
+        if (alu_done_w && (mul_valid_fifo[3] || alu_busy_w)) begin
+             // Lưu ý: Logic này hơi phức tạp do alu.v gộp done.
+             // Nếu MUL xong (sau 4 chu kì): Tag lấy từ FIFO
+             // Nếu DIV xong (sau 34 chu kì): Tag lấy từ Reg
+             
+             cdb_valid  = 1;
+             cdb_result = alu_res_w;
+             
+             // Phân biệt MUL done hay DIV done?
+             // DIV done thì trước đó busy phải đang = 1 (hoặc vừa tắt). 
+             // MUL done thì busy luôn = 0.
+             // (Cách đơn giản nhất: Nếu trong FIFO MUL có valid thì là MUL, ko thì là DIV)
+             if (mul_valid_fifo[3]) 
+                 cdb_tag = mul_tag_fifo[3];
+             else 
+                 cdb_tag = div_tag_reg;
+        end 
+        // Ưu tiên 2: Kết quả từ lệnh cơ bản (đã latch)
+        else if (base_valid_reg) begin
+             cdb_valid  = 1;
+             cdb_result = base_res_reg;
+             cdb_tag    = base_tag_reg;
+        end
+    end
+
+endmodule

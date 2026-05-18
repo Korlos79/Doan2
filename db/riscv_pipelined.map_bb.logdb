@@ -1,0 +1,5 @@
+v1
+DSP_BALANCING_IMPLEMENTATION,DSP_BLOCKS,alu:ALU_CORE|rv32m_muldiv_split:U_MULDIV|iter_mul32:u_mul|lpm_mult:Mult0|mult_l8t:auto_generated|mac_out2,
+DSP_BALANCING_IMPLEMENTATION,DSP_BLOCKS,alu:ALU_CORE|rv32m_muldiv_split:U_MULDIV|iter_mul32:u_mul|lpm_mult:Mult0|mult_l8t:auto_generated|mac_out4,
+DSP_BALANCING_IMPLEMENTATION,DSP_BLOCKS,alu:ALU_CORE|rv32m_muldiv_split:U_MULDIV|iter_mul32:u_mul|lpm_mult:Mult0|mult_l8t:auto_generated|mac_out8,
+DSP_BALANCING_IMPLEMENTATION,DSP_BLOCKS,alu:ALU_CORE|rv32m_muldiv_split:U_MULDIV|iter_mul32:u_mul|lpm_mult:Mult0|mult_l8t:auto_generated|mac_out6,

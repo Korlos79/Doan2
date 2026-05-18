@@ -1,0 +1,75 @@
+module RAT_Int #(
+    parameter TAG_WIDTH = 4
+)(
+    input wire clk,
+    input wire rst_n,
+
+    // =========================================================
+    // 1. ĐỌC TOÁN HẠNG (Cho Dispatcher hỏi)
+    // =========================================================
+    input  wire [4:0]           rs1_addr,
+    output wire                 rs1_ready, // 1: Lấy từ RegFile, 0: Đợi/lấy từ ROB
+    output wire [TAG_WIDTH-1:0] rs1_tag,
+
+    input  wire [4:0]           rs2_addr,
+    output wire                 rs2_ready,
+    output wire [TAG_WIDTH-1:0] rs2_tag,
+
+    // =========================================================
+    // 2. GHI ĐỔI TÊN (Khi Issue lệnh mới)
+    // =========================================================
+    input  wire                 issue_valid,
+    input  wire [4:0]           issue_rd,
+    input  wire [TAG_WIDTH-1:0] issue_rob_tag, // Lấy từ 'allocate_tag' của ROB
+
+    // =========================================================
+    // 3. DỌN DẸP KHI COMMIT (Nhận từ ROB)
+    // =========================================================
+    input  wire                 commit_valid,
+    input  wire [4:0]           commit_rd,
+    input  wire [TAG_WIDTH-1:0] commit_tag
+);
+
+    // Bảng trạng thái: 1 = Rảnh (Nằm trong RegFile), 0 = Bận (Phải tìm trong ROB)
+    reg [31:0] valid; 
+    // Bảng Tag: Trỏ tới dòng nào trong ROB
+    reg [TAG_WIDTH-1:0] tag_table [31:0];
+
+    // --- LOGIC ĐỌC (Bỏ qua x0) ---
+    assign rs1_ready = (rs1_addr == 0) ? 1'b1 : valid[rs1_addr];
+    assign rs1_tag   = (rs1_addr == 0) ? {TAG_WIDTH{1'b0}} : tag_table[rs1_addr];
+
+    assign rs2_ready = (rs2_addr == 0) ? 1'b1 : valid[rs2_addr];
+    assign rs2_tag   = (rs2_addr == 0) ? {TAG_WIDTH{1'b0}} : tag_table[rs2_addr];
+
+    integer i;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            valid <= 32'hFFFFFFFF; // Ban đầu tất cả đều rảnh
+            for (i=0; i<32; i=i+1) tag_table[i] <= 0;
+        end else begin
+            
+            // ---------------------------------------------------------
+            // A. DỌN DẸP KHI COMMIT (Giải phóng thanh ghi)
+            // ---------------------------------------------------------
+            if (commit_valid && commit_rd != 0) begin
+                // QUAN TRỌNG: Chỉ đánh dấu là Rảnh nếu Tag đang lưu trong RAT
+                // vẫn khớp với Tag vừa được Commit. 
+                // Nếu không khớp, tức là đã có lệnh mới (WAW) đè lên rồi, không được xóa!
+                if (tag_table[commit_rd] == commit_tag) begin
+                    valid[commit_rd] <= 1'b1;
+                end
+            end
+
+            // ---------------------------------------------------------
+            // B. CẬP NHẬT KHI ISSUE (Đổi tên thanh ghi)
+            // ---------------------------------------------------------
+            // Đặt Issue ở dưới Commit để Issue ghi đè (ưu tiên lệnh mới nhất)
+            if (issue_valid && issue_rd != 0) begin
+                valid[issue_rd]     <= 1'b0;          // Chuyển sang Bận
+                tag_table[issue_rd] <= issue_rob_tag; // Trỏ về cái Tag mới của ROB
+            end
+
+        end
+    end
+endmodule

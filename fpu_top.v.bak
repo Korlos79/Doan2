@@ -1,0 +1,136 @@
+`timescale 1ns / 1ps
+
+module fpu_top (
+    input  wire        clk,
+    input  wire        rst_n,
+    
+    // Giao tiếp đầu vào (Issue)
+    input  wire        valid_in,
+    input  wire [2:0]  opcode, // 000: Add, 001: Sub, 010: Mul, 011: Div, 100: Sqrt
+    input  wire [31:0] a,
+    input  wire [31:0] b,
+    
+    // Giao tiếp đầu ra (In-Order Commit)
+    output reg  [31:0] result_out,
+    output reg         valid_out,
+	 output wire rob_full
+);
+
+    // ==========================================
+    // 1. REORDER BUFFER (ROB) MEMORY
+    // ==========================================
+    reg [31:0] rob_data [0:15];
+    reg        rob_done [0:15]; 
+    
+    reg [3:0]  head; // Con trỏ xuất (Commit pointer)
+    reg [3:0]  tail; // Con trỏ nhập (Issue pointer / Cấp Tag)
+
+    // ==========================================
+    // 2. DISPATCH LOGIC (Định tuyến lệnh)
+    // ==========================================
+    wire start_add  = valid_in & (opcode == 3'b000);
+    wire start_sub  = valid_in & (opcode == 3'b001);
+    wire start_mul  = valid_in & (opcode == 3'b010);
+    wire start_div  = valid_in & (opcode == 3'b011);
+    //wire start_sqrt = valid_in & (opcode == 3'b100);
+
+    // ==========================================
+    // 3. INSTANTIATE EXECUTION UNITS
+    // ==========================================
+    wire v_add, v_sub, v_mul, v_div; //v_sqrt;
+    wire [31:0] res_add, res_sub, res_mul, res_div; //res_sqrt;
+    wire [3:0]  tag_add, tag_sub, tag_mul, tag_div; //tag_sqrt;
+	 assign rob_full = ((tail + 1'b1) == head);
+	 
+    addition_subtraction unit_add (
+        .clk(clk), .rst_n(rst_n), .start(start_add), .tag_in(tail), .op_sub(1'b0),
+        .a(a), .b(b), .out(res_add), .valid_out(v_add), .tag_out(tag_add)
+    );
+
+    addition_subtraction unit_sub (
+        .clk(clk), .rst_n(rst_n), .start(start_sub), .tag_in(tail), .op_sub(1'b1),
+        .a(a), .b(b), .out(res_sub), .valid_out(v_sub), .tag_out(tag_sub)
+    );
+
+    fp_mul unit_mul (
+        .clk(clk), .rst_n(rst_n), .start(start_mul), .tag_in(tail),
+        .floatA(a), .floatB(b), .result(res_mul), .valid_out(v_mul), .tag_out(tag_mul)
+    );
+
+    fp_div_goldschmidt #(
+        .PIPE_LAT(13)
+    ) unit_div (
+        .clk(clk), .rst_n(rst_n), .start(start_div), .tag_in(tail),
+        .floatA(a), .floatB(b), .result(res_div), .valid_out(v_div), .tag_out(tag_div)
+    );
+
+    // Khối Căn bậc hai (SQRT) mới tích hợp
+    /*fp_sqrt_goldschmidt #(
+        .PIPE_LAT(21)
+    ) unit_sqrt (
+        .clk(clk), .rst_n(rst_n), .start(start_sqrt), .tag_in(tail),
+        .floatA(a), .result(res_sqrt), .valid_out(v_sqrt), .tag_out(tag_sqrt)
+    );*/
+     
+    // ==========================================
+    // 4. WRITEBACK & COMMIT LOGIC
+    // ==========================================
+    integer i;
+    
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            head <= 4'b0;
+            tail <= 4'b0;
+            valid_out  <= 1'b0;
+            result_out <= 32'b0;
+            for(i=0; i<16; i=i+1) rob_done[i] <= 1'b0;
+        end else begin
+            valid_out <= 1'b0; 
+
+            // ----------------------------------------------------
+            // A. ISSUE
+            // ----------------------------------------------------
+            if (valid_in) begin
+                rob_done[tail] <= 1'b0; 
+                tail <= tail + 1;       
+            end
+
+            // ----------------------------------------------------
+            // B. WRITEBACK
+            // ----------------------------------------------------
+            if (v_add)  begin rob_data[tag_add]  <= res_add;  rob_done[tag_add]  <= 1'b1; end
+            if (v_sub)  begin rob_data[tag_sub]  <= res_sub;  rob_done[tag_sub]  <= 1'b1; end
+            if (v_mul)  begin rob_data[tag_mul]  <= res_mul;  rob_done[tag_mul]  <= 1'b1; end
+            if (v_div)  begin rob_data[tag_div]  <= res_div;  rob_done[tag_div]  <= 1'b1; end
+            //if (v_sqrt) begin rob_data[tag_sqrt] <= res_sqrt; rob_done[tag_sqrt] <= 1'b1; end
+
+            // ----------------------------------------------------
+            // C. COMMIT (In-Order)
+            // ----------------------------------------------------
+            if (rob_done[head]) begin
+                result_out <= rob_data[head];
+                valid_out  <= 1'b1;
+                head       <= head + 1;
+					 rob_done[head]    <= 1'b0;
+                
+            end else if (v_add && tag_add == head) begin
+                result_out <= res_add; valid_out <= 1'b1; 
+                head <= head + 1;
+            end else if (v_sub && tag_sub == head) begin
+                result_out <= res_sub; valid_out <= 1'b1; 
+                head <= head + 1;
+            end else if (v_mul && tag_mul == head) begin
+                result_out <= res_mul; valid_out <= 1'b1; 
+                head <= head + 1;
+            end else if (v_div && tag_div == head) begin
+                result_out <= res_div; valid_out <= 1'b1; 
+                head <= head + 1;
+            end /*else if (v_sqrt && tag_sqrt == head) begin
+                result_out <= res_sqrt; valid_out <= 1'b1; 
+                head <= head + 1;
+            end*/
+            
+        end
+    end
+    
+endmodule

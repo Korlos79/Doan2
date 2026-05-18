@@ -1,0 +1,7 @@
+
+State Machine - |fu_alu_wrapper|alu:ALU_CORE|rv32m_muldiv_split:U_MULDIV|iter_div32:u_div|state
+Name state.S_DONE state.S_FIX state.S_CALC state.S_IDLE 
+state.S_IDLE 0 0 0 0 
+state.S_CALC 0 0 1 1 
+state.S_FIX 0 1 0 1 
+state.S_DONE 1 0 0 1 

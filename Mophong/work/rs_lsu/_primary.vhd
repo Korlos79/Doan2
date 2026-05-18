@@ -1,0 +1,39 @@
+library verilog;
+use verilog.vl_types.all;
+entity rs_lsu is
+    generic(
+        DATA_WIDTH      : integer := 32;
+        TAG_WIDTH       : integer := 4;
+        NUM_ENTRIES     : integer := 4
+    );
+    port(
+        clk             : in     vl_logic;
+        rst_n           : in     vl_logic;
+        flush           : in     vl_logic;
+        dispatch_enable : in     vl_logic;
+        opcode          : in     vl_logic_vector(4 downto 0);
+        my_rob_tag      : in     vl_logic_vector;
+        src1_val        : in     vl_logic_vector;
+        src2_val        : in     vl_logic_vector;
+        src1_tag        : in     vl_logic_vector;
+        src2_tag        : in     vl_logic_vector;
+        src1_ready      : in     vl_logic;
+        src2_ready      : in     vl_logic;
+        imm_val         : in     vl_logic_vector(31 downto 0);
+        rs_full         : out    vl_logic;
+        cdb_valid       : in     vl_logic;
+        cdb_tag         : in     vl_logic_vector;
+        cdb_value       : in     vl_logic_vector;
+        fu_ready        : in     vl_logic;
+        fu_start        : out    vl_logic;
+        fu_op1          : out    vl_logic_vector;
+        fu_op2          : out    vl_logic_vector;
+        fu_imm          : out    vl_logic_vector;
+        fu_opcode       : out    vl_logic_vector(4 downto 0);
+        fu_dest_tag     : out    vl_logic_vector
+    );
+    attribute mti_svvh_generic_type : integer;
+    attribute mti_svvh_generic_type of DATA_WIDTH : constant is 1;
+    attribute mti_svvh_generic_type of TAG_WIDTH : constant is 1;
+    attribute mti_svvh_generic_type of NUM_ENTRIES : constant is 1;
+end rs_lsu;

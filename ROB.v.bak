@@ -1,0 +1,73 @@
+module ROB #(
+    parameter ROB_ADDR = 3,  // Kích thước ROB = 8 mục
+    parameter AR_WIDTH = 5,
+    parameter PR_WIDTH = 6
+)(
+    input  wire                 clk,
+    input  wire                 rst,
+
+    // Giao tiếp với Dispatch (Thêm lệnh vào Sổ cái)
+    input  wire                 dispatch_valid,
+    input  wire [AR_WIDTH-1:0]  dest_ar,   // Đích kiến trúc
+    input  wire [PR_WIDTH-1:0]  dest_pr,   // Đích vật lý mới
+    input  wire [PR_WIDTH-1:0]  old_pr,    // Đích vật lý cũ (để thu hồi)
+    output wire                 stall,     // Báo đầy
+
+    // Giao tiếp với Execution (Đánh dấu lệnh đã tính xong)
+    input  wire                 wb_valid,
+    input  wire [ROB_ADDR-1:0]  wb_rob_id,
+
+    // Giao tiếp Commit (Hoàn tất lệnh ở đầu Sổ cái)
+    output reg                  commit_valid,
+    output reg  [AR_WIDTH-1:0]  commit_ar,
+    output reg  [PR_WIDTH-1:0]  commit_old_pr // Gửi cho Free List để thu hồi
+);
+
+    localparam ROB_SIZE = 1 << ROB_ADDR;
+
+    // Các mảng dữ liệu của Sổ cái
+    reg [AR_WIDTH-1:0] rob_dest_ar [0:ROB_SIZE-1];
+    reg [PR_WIDTH-1:0] rob_dest_pr [0:ROB_SIZE-1];
+    reg [PR_WIDTH-1:0] rob_old_pr  [0:ROB_SIZE-1];
+    reg                rob_done    [0:ROB_SIZE-1];
+
+    reg [ROB_ADDR-1:0] head, tail;
+    reg [ROB_ADDR:0]   count;
+
+    assign stall = (count == ROB_SIZE);
+
+    integer i;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            head <= 0; tail <= 0; count <= 0; commit_valid <= 0;
+            for(i=0; i<ROB_SIZE; i=i+1) rob_done[i] <= 0;
+        end else begin
+            commit_valid <= 0;
+
+            // 1. Ghi nhận Writeback (Out-of-Order)
+            if (wb_valid) rob_done[wb_rob_id] <= 1'b1;
+
+            // 2. Commit (In-Order: Xóa ở Head)
+            if (count > 0 && rob_done[head]) begin
+                commit_valid  <= 1'b1;
+                commit_ar     <= rob_dest_ar[head];
+                commit_old_pr <= rob_old_pr[head]; // Lấy PR cũ ra để vứt đi
+                rob_done[head] <= 1'b0;
+                head <= head + 1;
+                count <= count - 1;
+            end
+
+            // 3. Dispatch (In-Order: Thêm vào Tail)
+            if (dispatch_valid && !stall) begin
+                rob_dest_ar[tail] <= dest_ar;
+                rob_dest_pr[tail] <= dest_pr;
+                rob_old_pr[tail]  <= old_pr;
+                rob_done[tail]    <= 1'b0;
+                tail <= tail + 1;
+                
+                // Xử lý đếm khi vừa Dispatch vừa Commit
+                if (!(count > 0 && rob_done[head])) count <= count + 1;
+            end
+        end
+    end
+endmodule

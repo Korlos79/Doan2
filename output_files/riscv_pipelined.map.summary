@@ -1,0 +1,14 @@
+Analysis & Synthesis Status : Successful - Fri Apr 10 14:20:43 2026
+Quartus II 64-Bit Version : 13.0.1 Build 232 06/12/2013 SP 1 SJ Web Edition
+Revision Name : riscv_pipelined
+Top-level Entity Name : fu_alu_wrapper
+Family : Cyclone II
+Total logic elements : 1,795
+    Total combinational functions : 1,645
+    Dedicated logic registers : 562
+Total registers : 562
+Total pins : 216
+Total virtual pins : 0
+Total memory bits : 0
+Embedded Multiplier 9-bit elements : 8
+Total PLLs : 0

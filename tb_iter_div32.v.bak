@@ -1,0 +1,139 @@
+`timescale 1ns / 1ps
+
+module tb_iter_div32;
+
+    // --- 1. Khai báo tín hiệu ---
+    reg clk;
+    reg rst_n;
+    reg start;
+    reg [4:0] op_sel;
+    reg [31:0] rs1;
+    reg [31:0] rs2;
+
+    wire busy;
+    wire done;
+    wire [31:0] result;
+
+    // --- 2. Định nghĩa Opcode (Copy từ DUT) ---
+    localparam OP_DIV  = 5'b10100; // Signed Division
+    localparam OP_DIVU = 5'b10101; // Unsigned Division
+    localparam OP_REM  = 5'b10110; // Signed Remainder
+    localparam OP_REMU = 5'b10111; // Unsigned Remainder
+
+    // --- 3. Instantiate DUT ---
+    iter_div32 uut (
+        .clk(clk),
+        .rst_n(rst_n),
+        .start(start),
+        .op_sel(op_sel),
+        .rs1(rs1),
+        .rs2(rs2),
+        .busy(busy),
+        .done(done),
+        .result(result)
+    );
+
+    // --- 4. Tạo Clock (100MHz) ---
+    always #5 clk = ~clk;
+
+    // --- 5. Biến đếm chu kì thực thi (Performance Counter) ---
+    integer start_time;
+    integer latency;
+
+    // --- 6. Task gửi lệnh và đợi kết quả (Blocking Task) ---
+    // Vì module chia là FSM Blocking, ta phải đợi nó xong mới gửi lệnh tiếp theo được.
+    task send_cmd;
+        input [4:0] opcode;
+        input [31:0] in1;
+        input [31:0] in2;
+        input [127:0] desc; // Mô tả
+        begin
+            @(posedge clk);
+            start <= 1;
+            op_sel <= opcode;
+            rs1 <= in1;
+            rs2 <= in2;
+            start_time = $time;
+
+            @(posedge clk);
+            start <= 0; // Tắt start sau 1 chu kì
+
+            // Đợi tín hiệu Done
+            wait(done);
+            latency = ($time - start_time) / 10;
+            
+            // In kết quả
+            $display("-------------------------------------------------------------");
+            $display("[TEST] %s", desc);
+            $display("       Input:  %h / %h (Dec: %0d / %0d)", in1, in2, $signed(in1), $signed(in2));
+            $display("       Output: %h (Dec: %0d)", result, $signed(result));
+            $display("       Latency: %0d cycles", latency);
+            
+            @(posedge clk); // Đợi 1 nhịp nghỉ
+        end
+    endtask
+
+    // --- 7. Main Test Sequence ---
+    initial begin
+        // Khởi tạo
+        clk = 0; rst_n = 0; start = 0;
+        op_sel = 0; rs1 = 0; rs2 = 0;
+
+        $display("=== RESET SYSTEM ===");
+        #20 rst_n = 1;
+        #20;
+
+        // ==========================================
+        // TEST CASE 1: DIV (Signed Division)
+        // ==========================================
+        // 10 / 3 = 3
+        send_cmd(OP_DIV, 32'd10, 32'd3, "DIV: 10 / 3");
+
+        // -10 / 3 = -3 (Thương âm)
+        send_cmd(OP_DIV, -32'd10, 32'd3, "DIV: -10 / 3");
+
+        // 10 / -3 = -3 (Thương âm)
+        send_cmd(OP_DIV, 32'd10, -32'd3, "DIV: 10 / -3");
+
+        // -10 / -3 = 3 (Thương dương)
+        send_cmd(OP_DIV, -32'd10, -32'd3, "DIV: -10 / -3");
+
+        // ==========================================
+        // TEST CASE 2: REM (Signed Remainder)
+        // Quy tắc: Dấu của số dư = Dấu của số BỊ CHIA (Dividend - RS1)
+        // ==========================================
+        // 10 % 3 = 1
+        send_cmd(OP_REM, 32'd10, 32'd3, "REM: 10 % 3");
+
+        // -10 % 3 = -1 (Vì -10 là số bị chia)
+        send_cmd(OP_REM, -32'd10, 32'd3, "REM: -10 % 3");
+
+        // 10 % -3 = 1 (Vì 10 là số bị chia, dấu của -3 không quan trọng với dư)
+        send_cmd(OP_REM, 32'd10, -32'd3, "REM: 10 % -3");
+
+        // ==========================================
+        // TEST CASE 3: DIVU (Unsigned Division)
+        // ==========================================
+        // -10 (signed) = FFFFFFF6 (unsigned) = 4,294,967,286
+        // Chia cho 2 -> 2,147,483,643 (7FFFFFFB)
+        send_cmd(OP_DIVU, -32'd10, 32'd2, "DIVU: -10 (Large Unsigned) / 2");
+
+        // ==========================================
+        // TEST CASE 4: Corner Cases (Ngoại lệ)
+        // ==========================================
+        // 4.1 Chia cho 0 (DIV by Zero) -> Trả về -1 (All 1s)
+        send_cmd(OP_DIV, 32'd100, 32'd0, "EXCEPTION: DIV by Zero");
+
+        // 4.2 Chia cho 0 (REM by Zero) -> Trả về chính số bị chia (100)
+        send_cmd(OP_REM, 32'd100, 32'd0, "EXCEPTION: REM by Zero");
+
+        // 4.3 Tràn số (Overflow): INT_MIN / -1
+        // -2147483648 / -1 -> Quá lớn cho 32-bit -> Trả về INT_MIN
+        send_cmd(OP_DIV, 32'h80000000, 32'hFFFFFFFF, "EXCEPTION: Overflow (INT_MIN / -1)");
+
+        #100;
+        $display("\n=== END OF SIMULATION ===");
+        $finish;
+    end
+
+endmodule

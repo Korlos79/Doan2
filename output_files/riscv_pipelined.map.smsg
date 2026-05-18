@@ -1,0 +1,13 @@
+Info (10281): Verilog HDL Declaration information at priority_encoder.v(2): object "significand" differs only in case from object "Significand" in the same scope
+Warning (10268): Verilog HDL information at multiplication.v(117): always construct contains both blocking and non-blocking assignments
+Info (10281): Verilog HDL Declaration information at FPU.v(116): object "cmp_eq" differs only in case from object "CMP_EQ" in the same scope
+Info (10281): Verilog HDL Declaration information at FPU.v(116): object "cmp_lt" differs only in case from object "CMP_LT" in the same scope
+Info (10281): Verilog HDL Declaration information at FPU.v(116): object "cmp_le" differs only in case from object "CMP_LE" in the same scope
+Warning (10268): Verilog HDL information at division.v(58): always construct contains both blocking and non-blocking assignments
+Warning (10268): Verilog HDL information at addition_subtraction.v(117): always construct contains both blocking and non-blocking assignments
+Warning (10268): Verilog HDL information at ID_EX_register.v(29): always construct contains both blocking and non-blocking assignments
+Warning (10268): Verilog HDL information at Sqrt.v(51): always construct contains both blocking and non-blocking assignments
+Info (10281): Verilog HDL Declaration information at Division2.v(29): object "x0" differs only in case from object "X0" in the same scope
+Warning (10268): Verilog HDL information at iter_mul32.v(36): always construct contains both blocking and non-blocking assignments
+Warning (10268): Verilog HDL information at iter_mul32.v(123): always construct contains both blocking and non-blocking assignments
+Warning (10268): Verilog HDL information at iter_div32.v(76): always construct contains both blocking and non-blocking assignments

@@ -1,0 +1,65 @@
+library verilog;
+use verilog.vl_types.all;
+entity dispatch_unit is
+    generic(
+        TAG_WIDTH       : integer := 4
+    );
+    port(
+        rdata1          : in     vl_logic_vector(31 downto 0);
+        rdata2          : in     vl_logic_vector(31 downto 0);
+        frdata1         : in     vl_logic_vector(31 downto 0);
+        frdata2         : in     vl_logic_vector(31 downto 0);
+        frdata3         : in     vl_logic_vector(31 downto 0);
+        pc              : in     vl_logic_vector(31 downto 0);
+        imm             : in     vl_logic_vector(31 downto 0);
+        op_d_in         : in     vl_logic_vector(4 downto 0);
+        alusrc_a        : in     vl_logic_vector(1 downto 0);
+        alusrc_b        : in     vl_logic_vector(1 downto 0);
+        src1_is_float   : in     vl_logic;
+        src2_is_float   : in     vl_logic;
+        src3_is_float   : in     vl_logic;
+        muxjalr_in      : in     vl_logic;
+        jump_in         : in     vl_logic;
+        branch_in       : in     vl_logic;
+        decode_valid    : in     vl_logic;
+        is_alu_inst     : in     vl_logic;
+        is_fpu_inst     : in     vl_logic;
+        is_lsu_inst     : in     vl_logic;
+        rob_full        : in     vl_logic;
+        rs_alu_full     : in     vl_logic;
+        rs_fpu_full     : in     vl_logic;
+        rs_lsu_full     : in     vl_logic;
+        rob_flush       : in     vl_logic;
+        int_rs1_ready   : in     vl_logic;
+        int_rs1_tag     : in     vl_logic_vector;
+        int_rs2_ready   : in     vl_logic;
+        int_rs2_tag     : in     vl_logic_vector;
+        float_rs1_ready : in     vl_logic;
+        float_rs1_tag   : in     vl_logic_vector;
+        float_rs2_ready : in     vl_logic;
+        float_rs2_tag   : in     vl_logic_vector;
+        float_rs3_ready : in     vl_logic;
+        float_rs3_tag   : in     vl_logic_vector;
+        disp_op1_val    : out    vl_logic_vector(31 downto 0);
+        disp_op1_tag    : out    vl_logic_vector;
+        disp_op1_ready  : out    vl_logic;
+        disp_op2_val    : out    vl_logic_vector(31 downto 0);
+        disp_op2_tag    : out    vl_logic_vector;
+        disp_op2_ready  : out    vl_logic;
+        disp_op3_val    : out    vl_logic_vector(31 downto 0);
+        disp_op3_tag    : out    vl_logic_vector;
+        disp_op3_ready  : out    vl_logic;
+        disp_op_d       : out    vl_logic_vector(4 downto 0);
+        disp_muxjalr    : out    vl_logic;
+        disp_jump       : out    vl_logic;
+        disp_branch     : out    vl_logic;
+        disp_pc         : out    vl_logic_vector(31 downto 0);
+        disp_imm        : out    vl_logic_vector(31 downto 0);
+        dispatch_en_alu : out    vl_logic;
+        dispatch_en_fpu : out    vl_logic;
+        dispatch_en_lsu : out    vl_logic;
+        dispatch_stall  : out    vl_logic
+    );
+    attribute mti_svvh_generic_type : integer;
+    attribute mti_svvh_generic_type of TAG_WIDTH : constant is 1;
+end dispatch_unit;

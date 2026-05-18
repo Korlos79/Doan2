@@ -1,0 +1,102 @@
+# -------------------------------------------------------------------------- #
+#
+# Copyright (C) 1991-2013 Altera Corporation
+# Your use of Altera Corporation's design tools, logic functions 
+# and other software and tools, and its AMPP partner logic 
+# functions, and any output files from any of the foregoing 
+# (including device programming or simulation files), and any 
+# associated documentation or information are expressly subject 
+# to the terms and conditions of the Altera Program License 
+# Subscription Agreement, Altera MegaCore Function License 
+# Agreement, or other applicable license agreement, including, 
+# without limitation, that your use is for the sole purpose of 
+# programming logic devices manufactured by Altera and sold by 
+# Altera or its authorized distributors.  Please refer to the 
+# applicable agreement for further details.
+#
+# -------------------------------------------------------------------------- #
+#
+# Quartus II 64-Bit
+# Version 13.0.1 Build 232 06/12/2013 Service Pack 1 SJ Web Edition
+# Date created = 10:48:21  April 28, 2026
+#
+# -------------------------------------------------------------------------- #
+#
+# Notes:
+#
+# 1) The default values for assignments are stored in the file:
+#		RISCV_Pipelined_IFM_AXI4_OoO_v2_assignment_defaults.qdf
+#    If this file doesn't exist, see file:
+#		assignment_defaults.qdf
+#
+# 2) Altera recommends that you do not modify this file. This
+#    file is updated automatically by the Quartus II software
+#    and any changes you make may be lost or overwritten.
+#
+# -------------------------------------------------------------------------- #
+
+
+set_global_assignment -name FAMILY "Cyclone II"
+set_global_assignment -name DEVICE AUTO
+set_global_assignment -name TOP_LEVEL_ENTITY fpu_top
+set_global_assignment -name ORIGINAL_QUARTUS_VERSION "13.0 SP1"
+set_global_assignment -name PROJECT_CREATION_TIME_DATE "10:48:21  APRIL 28, 2026"
+set_global_assignment -name LAST_QUARTUS_VERSION "13.0 SP1"
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name DEVICE_FILTER_PACKAGE FBGA
+set_global_assignment -name DEVICE_FILTER_PIN_COUNT 672
+set_global_assignment -name DEVICE_FILTER_SPEED_GRADE FASTEST
+set_global_assignment -name EDA_SIMULATION_TOOL "ModelSim-Altera (Verilog)"
+set_global_assignment -name EDA_OUTPUT_DATA_FORMAT "VERILOG HDL" -section_id eda_simulation
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
+set_global_assignment -name VERILOG_FILE FPU.v
+set_global_assignment -name VERILOG_FILE wallace_tree_12_rows.v
+set_global_assignment -name VERILOG_FILE tb_fp_sqrt.v
+set_global_assignment -name VERILOG_FILE tb_fp_div_goldschmidt.v
+set_global_assignment -name VERILOG_FILE sqrt_lut_rom.v
+set_global_assignment -name VERILOG_FILE mantissa_multiplier.v
+set_global_assignment -name VERILOG_FILE lzc_24.v
+set_global_assignment -name VERILOG_FILE fp_sqrt_goldschmidt.v
+set_global_assignment -name VERILOG_FILE fp_mul_tb.v
+set_global_assignment -name VERILOG_FILE fp_mul.v
+set_global_assignment -name VERILOG_FILE fp_fma.v
+set_global_assignment -name VERILOG_FILE fp_div_goldschmidt.v
+set_global_assignment -name VERILOG_FILE div_lut_rom.v
+set_global_assignment -name VERILOG_FILE compressor_3_2_72bit.v
+set_global_assignment -name VERILOG_FILE booth_encoder_radix4.v
+set_global_assignment -name VERILOG_FILE as_test_bench.v
+set_global_assignment -name VERILOG_FILE addition_subtraction.v
+set_global_assignment -name VERILOG_FILE axi_simple_master.v
+set_global_assignment -name VERILOG_FILE dmem.v
+set_global_assignment -name VERILOG_FILE ConvfromUnsInt.v
+set_global_assignment -name VERILOG_FILE ConvfromSignInt.v
+set_global_assignment -name VERILOG_FILE ConvertUnstoInt.v
+set_global_assignment -name VERILOG_FILE ConverttoInt.v
+set_global_assignment -name VERILOG_FILE compare.v
+set_global_assignment -name VERILOG_FILE iter_mul32.v
+set_global_assignment -name VERILOG_FILE iter_div32.v
+set_global_assignment -name VERILOG_FILE alu.v
+set_global_assignment -name VERILOG_FILE testlenh.v
+set_global_assignment -name VERILOG_FILE testbench_alu.v
+set_global_assignment -name VERILOG_FILE tb_iter_mul32.v
+set_global_assignment -name VERILOG_FILE tb_iter_div32.v
+set_global_assignment -name VERILOG_FILE Sign_Extend.v
+set_global_assignment -name VERILOG_FILE rs_lsu.v
+set_global_assignment -name VERILOG_FILE rs_alu.v
+set_global_assignment -name VERILOG_FILE ROB.v
+set_global_assignment -name VERILOG_FILE riscv_ooo_top.v
+set_global_assignment -name VERILOG_FILE rf_32_32.v
+set_global_assignment -name VERILOG_FILE RAT_Int.v
+set_global_assignment -name VERILOG_FILE RAT_Float.v
+set_global_assignment -name VERILOG_FILE PC.v
+set_global_assignment -name VERILOG_FILE instruction_Mem.v
+set_global_assignment -name VERILOG_FILE IF_ID_register.v
+set_global_assignment -name VERILOG_FILE fu_lsu_wrapper.v
+set_global_assignment -name VERILOG_FILE fu_fpu_wrapper.v
+set_global_assignment -name VERILOG_FILE fu_alu_wrapper.v
+set_global_assignment -name VERILOG_FILE fpr_32_32.v
+set_global_assignment -name VERILOG_FILE dispatch_unit.v
+set_global_assignment -name VERILOG_FILE Control_Unit.v

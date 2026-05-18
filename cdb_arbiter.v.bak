@@ -1,0 +1,85 @@
+module cdb_arbiter #(
+    parameter DATA_WIDTH = 32,
+    parameter TAG_WIDTH  = 3
+)(
+    // ============================================================
+    // INPUT TỪ CÁC FUNCTIONAL UNIT WRAPPERS
+    // ============================================================
+    
+    // 1. Từ Integer Unit (ALU Wrapper)
+    input  wire                   alu_valid,
+    input  wire [DATA_WIDTH-1:0]  alu_result,
+    input  wire [TAG_WIDTH-1:0]   alu_tag,
+    input  wire [4:0]             alu_dest_reg,
+    output reg                    alu_ack,      // Báo lại: "Đã phát xong"
+
+    // 2. Từ Floating Point Unit (FPU Wrapper)
+    input  wire                   fpu_valid,
+    input  wire [DATA_WIDTH-1:0]  fpu_result,
+    input  wire [TAG_WIDTH-1:0]   fpu_tag,
+    input  wire [4:0]             fpu_dest_reg,
+    output reg                    fpu_ack,
+
+    // 3. Từ Load/Store Unit (LSU Wrapper - Cần viết thêm wrapper này)
+    input  wire                   lsu_valid,
+    input  wire [DATA_WIDTH-1:0]  lsu_result,
+    input  wire [TAG_WIDTH-1:0]   lsu_tag,
+    input  wire [4:0]             lsu_dest_reg,
+    output reg                    lsu_ack,
+
+    // ============================================================
+    // OUTPUT RA COMMON DATA BUS (Broadcast)
+    // ============================================================
+    // Nối các dây này về Scoreboard và tất cả Reservation Stations
+    output reg                    cdb_valid_out,
+    output reg [DATA_WIDTH-1:0]   cdb_value_out,
+    output reg [TAG_WIDTH-1:0]    cdb_tag_out,
+    output reg [4:0]              cdb_dest_reg_out
+);
+
+    always @(*) begin
+        // Mặc định: Không ai được chọn
+        cdb_valid_out    = 0;
+        cdb_value_out    = 0;
+        cdb_tag_out      = 0;
+        cdb_dest_reg_out = 0;
+        
+        alu_ack = 0;
+        fpu_ack = 0;
+        lsu_ack = 0;
+
+        // --- LOGIC ƯU TIÊN (Priority Encoder) ---
+        // Thứ tự ưu tiên: LSU > FPU > ALU
+        // Lý do: LSU (Memory) chậm nhất và quan trọng nhất để giải phóng bộ nhớ.
+        // ALU thường nhanh và nhiều, có thể chờ 1 nhịp cũng không sao.
+
+        if (lsu_valid) begin
+            // Chọn LSU
+            cdb_valid_out    = 1;
+            cdb_value_out    = lsu_result;
+            cdb_tag_out      = lsu_tag;
+            cdb_dest_reg_out = lsu_dest_reg;
+            
+            lsu_ack          = 1; // Báo cho LSU Wrapper biết để xóa cờ valid
+        end
+        else if (fpu_valid) begin
+            // Chọn FPU
+            cdb_valid_out    = 1;
+            cdb_value_out    = fpu_result;
+            cdb_tag_out      = fpu_tag;
+            cdb_dest_reg_out = fpu_dest_reg;
+            
+            fpu_ack          = 1;
+        end
+        else if (alu_valid) begin
+            // Chọn ALU
+            cdb_valid_out    = 1;
+            cdb_value_out    = alu_result;
+            cdb_tag_out      = alu_tag;
+            cdb_dest_reg_out = alu_dest_reg;
+            
+            alu_ack          = 1;
+        end
+    end
+
+endmodule

@@ -1,0 +1,111 @@
+
+module dmem (
+    input wire clk,
+    input wire rst_n,
+
+    // --- Giao diện với PIPELINE ---
+    input  wire        we,            
+    input  wire        re,            
+    input  wire [2:0]  mode,          
+    input  wire [31:0] addr,          
+    input  wire [31:0] write_data,    
+    output reg  [31:0] mem_out,       
+    output wire        stall_out,     
+
+    // --- GIAO DIỆN AXI4 MASTER ---
+    output wire [31:0] m_axi_awaddr, m_axi_awvalid, input wire m_axi_awready,
+    output wire [31:0] m_axi_wdata,  output wire [3:0] m_axi_wstrb, output wire m_axi_wvalid, input wire m_axi_wready,
+    input  wire        m_axi_bvalid, output wire m_axi_bready,
+    output wire [31:0] m_axi_araddr, output wire m_axi_arvalid, input wire m_axi_arready,
+    input  wire [31:0] m_axi_rdata,  input wire m_axi_rvalid,   output wire m_axi_rready
+);
+
+    localparam b=3'b000, h=3'b001, w=3'b010, bu=3'b100, hu=3'b101;
+
+    wire axi_busy;
+    wire axi_done;
+    reg [31:0] axi_wdata_reg;
+    reg [3:0]  axi_wstrb_reg;
+    wire [31:0] axi_rdata_raw;
+
+    // Fix: Chỉ kích hoạt AXI khi thực sự có lệnh và chưa bận
+    // Không nên dùng !axi_done ở đây vì nó có thể gây lặp lệnh
+    wire start_axi = (re || we) && !axi_busy; 
+
+    // ==========================================
+    // 1. XỬ LÝ STORE ALIGNMENT
+    // ==========================================
+    always @(*) begin
+        axi_wdata_reg = write_data;
+        axi_wstrb_reg = 4'b1111;
+        if (we) begin
+            case(mode)
+                b: begin 
+                    axi_wdata_reg = {4{write_data[7:0]}}; 
+                    axi_wstrb_reg = 4'b0001 << addr[1:0]; 
+                end
+                h: begin 
+                    axi_wdata_reg = {2{write_data[15:0]}};
+                    axi_wstrb_reg = 4'b0011 << addr[1:0]; 
+                end
+                default: begin 
+                    axi_wdata_reg = write_data;
+                    axi_wstrb_reg = 4'b1111;
+                end
+            endcase
+        end
+    end
+
+    // ==========================================
+    // 2. AXI MASTER
+    // ==========================================
+    axi_simple_master u_axi_master (
+        .clk(clk), .rst_n(rst_n),
+        .start(start_axi),
+        .rw(we),
+        .addr(addr),
+        .wdata(axi_wdata_reg),
+        .wstrb(axi_wstrb_reg),
+        .done(axi_done),
+        .rdata(axi_rdata_raw),
+        .busy(axi_busy),
+        .m_axi_awaddr(m_axi_awaddr), .m_axi_awvalid(m_axi_awvalid), .m_axi_awready(m_axi_awready),
+        .m_axi_wdata(m_axi_wdata),   .m_axi_wstrb(m_axi_wstrb),     .m_axi_wvalid(m_axi_wvalid), .m_axi_wready(m_axi_wready),
+        .m_axi_bvalid(m_axi_bvalid), .m_axi_bready(m_axi_bready),
+        .m_axi_araddr(m_axi_araddr), .m_axi_arvalid(m_axi_arvalid), .m_axi_arready(m_axi_arready),
+        .m_axi_rdata(m_axi_rdata),   .m_axi_rvalid(m_axi_rvalid),   .m_axi_rready(m_axi_rready)
+    );
+
+    // ==========================================
+    // 3. XỬ LÝ DỮ LIỆU ĐỌC (SỬA LỖI TRẢ VỀ 0)
+    // ==========================================
+    reg [31:0] read_data_latch;
+    
+    // Chốt dữ liệu thô ngay khi AXI báo xong để tránh bị mất
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) read_data_latch <= 32'd0;
+        else if (axi_done && re) read_data_latch <= axi_rdata_raw;
+    end
+
+    wire [7:0]  byte_val = read_data_latch >> (addr[1:0] * 8);
+    wire [15:0] half_val = read_data_latch >> (addr[1:0] * 8);
+
+    always @(*) begin
+        case (mode)
+            b:  mem_out = {{24{byte_val[7]}}, byte_val};
+            h:  mem_out = {{16{half_val[15]}}, half_val};
+            w:  mem_out = read_data_latch;
+            bu: mem_out = {24'd0, byte_val};
+            hu: mem_out = {16'd0, half_val};
+            default: mem_out = read_data_latch;
+        endcase
+    end
+
+    // ==========================================
+    // 4. TÍN HIỆU STALL (SỬA LẠI ĐỂ ĐỒNG BỘ)
+    // ==========================================
+    // Giải thích: Stall phải lên ngay khi có lệnh (re||we) 
+    // và chỉ biến mất sau 1 chu kỳ kể từ khi axi_done=1 để kịp chốt dữ liệu.
+    assign stall_out = (re || we) && !axi_done;
+
+endmodule

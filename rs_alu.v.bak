@@ -1,0 +1,213 @@
+module rs_alu #(
+    parameter DATA_WIDTH  = 32,
+    parameter TAG_WIDTH   = 4,   
+    parameter NUM_ENTRIES = 4   
+)(
+    input wire clk,
+    input wire rst_n,
+    
+    // --- TÍN HIỆU FLUSH ---
+    input wire flush, // Xóa sạch hàng đợi khi Branch Mispredict
+
+    // --- 1. GIAO DIỆN VỚI DISPATCHER (Nhận lệnh) ---
+    input  wire                   dispatch_enable,
+    
+    // Toán hạng 1
+    input  wire [DATA_WIDTH-1:0]  src1_val,
+    input  wire [TAG_WIDTH-1:0]   src1_tag,
+    input  wire                   src1_ready,
+    
+    // Toán hạng 2
+    input  wire [DATA_WIDTH-1:0]  src2_val,
+    input  wire [TAG_WIDTH-1:0]   src2_tag,
+    input  wire                   src2_ready,
+
+    // Toán hạng 3 (Có thể bỏ trống hoặc giữ lại nếu bạn dùng chung template)
+    input  wire [DATA_WIDTH-1:0]  src3_val,
+    input  wire [TAG_WIDTH-1:0]   src3_tag,
+    input  wire                   src3_ready,
+    
+    input  wire [4:0]             opcode,
+    input  wire [TAG_WIDTH-1:0]   my_rob_tag,
+
+    // MỚI: Tín hiệu PC và Branch/Jump từ Dispatcher
+    input  wire [31:0]            disp_pc,
+    input  wire                   disp_muxjalr,
+    input  wire                   disp_jump,
+    input  wire                   disp_branch,
+
+    output wire                   rs_full,
+
+    // --- 2. GIAO DIỆN VỚI CDB (Lắng nghe kết quả) ---
+    input  wire                   cdb_valid,
+    input  wire [TAG_WIDTH-1:0]   cdb_tag,
+    input  wire [DATA_WIDTH-1:0]  cdb_value,
+
+    // --- 3. GIAO DIỆN VỚI FU ALU (Đẩy lệnh đi tính) ---
+    input  wire                   fu_ready,
+    output reg                    fu_start,
+    
+    output reg  [DATA_WIDTH-1:0]  fu_op1,
+    output reg  [DATA_WIDTH-1:0]  fu_op2,
+    output reg  [DATA_WIDTH-1:0]  fu_op3,
+    
+    output reg  [4:0]             fu_opcode,
+    output reg  [TAG_WIDTH-1:0]   fu_dest_tag,
+    
+    // MỚI: Tín hiệu PC và Branch/Jump xuất ra cho FU ALU
+    output reg  [31:0]            fu_pc,
+    output reg                    fu_muxjalr,
+    output reg                    fu_jump,
+    output reg                    fu_branch
+);
+
+    // ==========================================
+    // CẤU TRÚC LƯU TRỮ BÊN TRONG RS
+    // ==========================================
+    reg [NUM_ENTRIES-1:0] busy;
+    reg [4:0]             op [NUM_ENTRIES-1:0];
+    
+    // Operand 1, 2, 3
+    reg [DATA_WIDTH-1:0]  v1 [NUM_ENTRIES-1:0]; reg [TAG_WIDTH-1:0]  q1 [NUM_ENTRIES-1:0]; reg [NUM_ENTRIES-1:0] r1;
+    reg [DATA_WIDTH-1:0]  v2 [NUM_ENTRIES-1:0]; reg [TAG_WIDTH-1:0]  q2 [NUM_ENTRIES-1:0]; reg [NUM_ENTRIES-1:0] r2;
+    reg [DATA_WIDTH-1:0]  v3 [NUM_ENTRIES-1:0]; reg [TAG_WIDTH-1:0]  q3 [NUM_ENTRIES-1:0]; reg [NUM_ENTRIES-1:0] r3;
+
+    reg [TAG_WIDTH-1:0]   rob_tag [NUM_ENTRIES-1:0];
+
+    // MỚI: Mảng lưu trữ PC và tín hiệu Branch/Jump
+    reg [31:0] rs_pc       [NUM_ENTRIES-1:0];
+    reg        rs_muxjalr  [NUM_ENTRIES-1:0];
+    reg        rs_jump     [NUM_ENTRIES-1:0];
+    reg        rs_branch   [NUM_ENTRIES-1:0];
+
+    integer i;
+
+    // ==========================================
+    // LOGIC TÌM CHỖ TRỐNG (Combinational)
+    // ==========================================
+    reg [31:0] alloc_idx;
+    reg        found_slot;
+
+    always @(*) begin
+        found_slot = 0;
+        alloc_idx  = 0;
+        for (i = 0; i < NUM_ENTRIES; i = i + 1) begin
+            if (!busy[i] && !found_slot) begin
+                alloc_idx  = i;
+                found_slot = 1;
+            end
+        end
+    end
+    
+    assign rs_full = !found_slot;
+
+    // ==========================================
+    // LOGIC ISSUE - CHỌN LỆNH ĐỂ CHẠY (Combinational)
+    // ==========================================
+    reg [31:0] issue_idx;
+    reg        can_fire;
+
+    always @(*) begin
+        can_fire  = 0;
+        issue_idx = 0;
+        for (i = 0; i < NUM_ENTRIES; i = i + 1) begin
+            if (busy[i] && r1[i] && r2[i] && r3[i] && !can_fire) begin
+                issue_idx = i;
+                can_fire  = 1;
+            end
+        end
+    end
+
+    // ==========================================
+    // SEQUENTIAL LOGIC (Cập nhật trạng thái)
+    // ==========================================
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            busy       <= 0;
+            fu_start   <= 0;
+            r1         <= 0; 
+            r2         <= 0; 
+            r3         <= 0;
+            fu_pc      <= 0;
+            fu_muxjalr <= 0;
+            fu_jump    <= 0;
+            fu_branch  <= 0;
+        end else begin
+            if (flush) begin
+                busy     <= 0; // Xóa sạch lệnh trong RS
+                fu_start <= 0;
+            end else begin
+                fu_start <= 0;
+
+                // --- 1. GỬI LỆNH ĐI EXECUTE (FIRE) ---
+                if (can_fire && fu_ready) begin
+                    fu_start    <= 1;
+                    fu_op1      <= v1[issue_idx];
+                    fu_op2      <= v2[issue_idx];
+                    fu_op3      <= v3[issue_idx];
+                    fu_opcode   <= op[issue_idx];
+                    fu_dest_tag <= rob_tag[issue_idx];
+                    
+                    // MỚI: Đẩy cờ Branch/Jump và PC vào Wrapper
+                    fu_pc       <= rs_pc[issue_idx];
+                    fu_muxjalr  <= rs_muxjalr[issue_idx];
+                    fu_jump     <= rs_jump[issue_idx];
+                    fu_branch   <= rs_branch[issue_idx];
+
+                    busy[issue_idx] <= 0;
+                end
+
+                // --- 2. CẬP NHẬT TỪNG ENTRY (DISPATCH & SNOOP) ---
+                for (i = 0; i < NUM_ENTRIES; i = i + 1) begin
+                    
+                    // Trường hợp A: Đang nhận lệnh mới
+                    if (dispatch_enable && found_slot && (i == alloc_idx)) begin
+                        busy[i]    <= 1;
+                        op[i]      <= opcode;
+                        rob_tag[i] <= my_rob_tag;
+                        
+                        // MỚI: Cất các cờ Branch/Jump và PC vào slot này
+                        rs_pc[i]      <= disp_pc;
+                        rs_muxjalr[i] <= disp_muxjalr;
+                        rs_jump[i]    <= disp_jump;
+                        rs_branch[i]  <= disp_branch;
+                        
+                        // Toán hạng 1
+                        if (!src1_ready && cdb_valid && (src1_tag == cdb_tag)) begin
+                            v1[i] <= cdb_value; r1[i] <= 1; q1[i] <= 0;
+                        end else begin
+                            v1[i] <= src1_val;  r1[i] <= src1_ready; q1[i] <= src1_tag;
+                        end
+
+                        // Toán hạng 2
+                        if (!src2_ready && cdb_valid && (src2_tag == cdb_tag)) begin
+                            v2[i] <= cdb_value; r2[i] <= 1; q2[i] <= 0;
+                        end else begin
+                            v2[i] <= src2_val;  r2[i] <= src2_ready; q2[i] <= src2_tag;
+                        end
+
+                        // Toán hạng 3
+                        if (!src3_ready && cdb_valid && (src3_tag == cdb_tag)) begin
+                            v3[i] <= cdb_value; r3[i] <= 1; q3[i] <= 0;
+                        end else begin
+                            v3[i] <= src3_val;  r3[i] <= src3_ready; q3[i] <= src3_tag;
+                        end
+                    end 
+                    
+                    // Trường hợp B: Snoop CDB
+                    else if (busy[i]) begin
+                        if (!(can_fire && fu_ready && i == issue_idx)) begin
+                            if (cdb_valid) begin
+                                if (!r1[i] && (q1[i] == cdb_tag)) begin v1[i] <= cdb_value; r1[i] <= 1; end
+                                if (!r2[i] && (q2[i] == cdb_tag)) begin v2[i] <= cdb_value; r2[i] <= 1; end
+                                if (!r3[i] && (q3[i] == cdb_tag)) begin v3[i] <= cdb_value; r3[i] <= 1; end
+                            end
+                        end
+                    end
+                    
+                end // kết thúc for
+            end // kết thúc else (không flush)
+        end // kết thúc else (không reset)
+    end // kết thúc always
+
+endmodule

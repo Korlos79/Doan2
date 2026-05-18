@@ -1,0 +1,174 @@
+module iter_div32 (
+    input  wire        clk,
+    input  wire        rst_n,
+
+    input  wire        start,       // Tín hiệu bắt đầu (Pulse 1 chu kì)
+    input  wire [4:0]  op_sel,      // 10100->10111 (DIV, DIVU, REM, REMU)
+
+    input  wire [31:0] rs1,         // Số bị chia (Dividend)
+    input  wire [31:0] rs2,         // Số chia (Divisor)
+
+    output reg         busy,        // Báo bận (để Scheduler không gửi lệnh mới)
+    output reg         done,        // Báo kết quả sẵn sàng
+    output reg  [31:0] result       // Kết quả (Thương hoặc Dư)
+);
+
+    // --- 1. DEFINITIONS ---
+    localparam OP_DIV  = 5'b10100;
+    localparam OP_DIVU = 5'b10101;
+    localparam OP_REM  = 5'b10110;
+    localparam OP_REMU = 5'b10111;
+
+    // FSM States
+    localparam S_IDLE = 2'd0;
+    localparam S_CALC = 2'd1; // Trạng thái tính toán (32 chu kì)
+    localparam S_FIX  = 2'd2; // Sửa dấu và xử lý ngoại lệ
+    localparam S_DONE = 2'd3; // Trả kết quả
+
+    reg [1:0] state, next_state;
+    reg [5:0] count; // Bộ đếm 32 chu kì
+
+    // --- 2. INPUT DECODING ---
+    wire is_signed = (op_sel == OP_DIV) || (op_sel == OP_REM);
+    wire is_rem    = (op_sel == OP_REM) || (op_sel == OP_REMU);
+
+    // Tính dấu của toán hạng
+    wire rs1_sign = is_signed & rs1[31];
+    wire rs2_sign = is_signed & rs2[31];
+
+    // Lấy trị tuyệt đối (Absolute Value) để tính toán như số không dấu
+    wire [31:0] abs_rs1 = rs1_sign ? (~rs1 + 1) : rs1;
+    wire [31:0] abs_rs2 = rs2_sign ? (~rs2 + 1) : rs2;
+
+    // Check ngoại lệ (theo chuẩn RISC-V)
+    wire div_by_zero = (rs2 == 32'd0);
+    wire overflow    = is_signed && (rs1 == 32'h80000000) && (rs2 == 32'hFFFFFFFF);
+
+    // --- 3. DATAPATH REGISTERS ---
+    reg [31:0] reg_q;   // Quotient (Thương) - Dịch dần vào
+    reg [31:0] reg_r;   // Remainder (Dư)
+    reg [31:0] reg_b;   // Divisor (Số chia) - Lưu cố định
+    
+	 reg [31:0] r_shift;
+    reg [31:0] q_shift;
+    reg [31:0] sub_res;
+    // Lưu trạng thái dấu để dùng ở bước cuối
+    reg save_rs1_sign, save_rs2_sign, save_is_rem, save_div_zero, save_overflow;
+
+    // --- 4. NEXT STATE LOGIC ---
+    always @(*) begin
+        case (state)
+            S_IDLE: begin
+                if (start) next_state = S_CALC;
+                else       next_state = S_IDLE;
+            end
+            S_CALC: begin
+                if (count == 6'd31) next_state = S_FIX; // Đủ 32 vòng lặp
+                else                next_state = S_CALC;
+            end
+            S_FIX:  next_state = S_DONE;
+            S_DONE: next_state = S_IDLE;
+            default: next_state = S_IDLE;
+        endcase
+    end
+
+    // --- 5. SEQUENTIAL LOGIC (FSM & CALCULATION) ---
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state <= S_IDLE;
+            busy  <= 0;
+            done  <= 0;
+            result <= 0;
+            count <= 0;
+            reg_q <= 0; reg_r <= 0; reg_b <= 0;
+            save_rs1_sign <= 0; save_rs2_sign <= 0;
+            save_is_rem <= 0; save_div_zero <= 0; save_overflow <= 0;
+        end else begin
+            state <= next_state;
+
+            case (state)
+                // --- GIAI ĐOẠN 1: CHUẨN BỊ (1 Chu kì) ---
+                S_IDLE: begin
+                    done <= 0;
+                    if (start) begin
+                        busy <= 1;
+                        count <= 0;
+                        
+                        // Lưu các cờ điều khiển
+                        save_rs1_sign <= rs1_sign;
+                        save_rs2_sign <= rs2_sign;
+                        save_is_rem   <= is_rem;
+                        save_div_zero <= div_by_zero;
+                        save_overflow <= overflow;
+
+                        // Nạp dữ liệu (Trị tuyệt đối)
+                        reg_q <= abs_rs1; // Dividend nằm sẵn ở Quotient reg
+                        reg_r <= 32'd0;   // Remainder khởi tạo bằng 0
+                        reg_b <= abs_rs2; // Divisor
+                    end else begin
+                        busy <= 0;
+                    end
+                end
+
+                // --- GIAI ĐOẠN 2: TÍNH TOÁN (32 Chu kì) ---
+                // Thuật toán: Non-Restoring Division (Simplified Restoring logic)
+                // Dịch trái {R, Q} -> Thử trừ -> Nếu được thì update R và set bit Q
+                S_CALC: begin
+                    // 1. Shift Left {Remainder, Quotient} 1 bit
+                    // Bit MSB của Q sẽ tràn sang LSB của R                 
+                    // Nối R và Q thành 64 bit, dịch trái 1
+                    {r_shift, q_shift} = {reg_r, reg_q} << 1;
+                    
+                    // 2. Thử trừ: (R_shifted - Divisor)
+                    sub_res = r_shift - reg_b;
+
+                    // 3. Update logic
+                    if (r_shift >= reg_b) begin
+                        // Trừ được (không mượn)
+                        reg_r <= sub_res;
+                        reg_q <= {q_shift[31:1], 1'b1}; // Set LSB = 1
+                    end else begin
+                        // Không trừ được
+                        reg_r <= r_shift;
+                        reg_q <= {q_shift[31:1], 1'b0}; // Set LSB = 0
+                    end
+
+                    count <= count + 1;
+                end
+
+                // --- GIAI ĐOẠN 3: XỬ LÝ DẤU & NGOẠI LỆ (1 Chu kì) ---
+                S_FIX: begin
+                    busy <= 1; // Vẫn bận
+                    
+                    if (save_div_zero) begin
+                        // Chia cho 0 theo chuẩn RISC-V
+                        if (save_is_rem) result <= rs1;       // REM x/0 = x
+                        else             result <= 32'hFFFFFFFF; // DIV x/0 = -1 (All 1s)
+                    end 
+                    else if (save_overflow) begin
+                        // Tràn số (INT_MIN / -1)
+                        if (save_is_rem) result <= 32'd0;     // REM = 0
+                        else             result <= 32'h80000000; // DIV = INT_MIN
+                    end 
+                    else begin
+                        // Trường hợp bình thường
+                        if (save_is_rem) begin
+                            // Dấu của số dư (Remainder) luôn theo dấu số bị chia (RS1)
+                            result <= save_rs1_sign ? (~reg_r + 1) : reg_r;
+                        end else begin
+                            // Dấu của thương (Quotient) = RS1_sign XOR RS2_sign
+                            result <= (save_rs1_sign ^ save_rs2_sign) ? (~reg_q + 1) : reg_q;
+                        end
+                    end
+                end
+
+                // --- GIAI ĐOẠN 4: TRẢ KẾT QUẢ (1 Chu kì) ---
+                S_DONE: begin
+                    done <= 1;
+                    busy <= 0; // Giải phóng Unit để Scheduler biết
+                end
+            endcase
+        end
+    end
+
+endmodule

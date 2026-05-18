@@ -1,0 +1,165 @@
+module dispatch_unit (
+    // --- 1. INPUT TỪ DECODE & REGFILE (Integer) ---
+    input wire [31:0] rdata1,       // Giá trị đọc từ Int RegFile (RS1)
+    input wire [31:0] rdata2,       // Giá trị đọc từ Int RegFile (RS2)
+    input wire [31:0] pc,           // Program Counter
+    input wire [31:0] imm,          // Immediate Value
+    
+    // --- 2. INPUT TỪ FLOATING POINT REGFILE (Mới) ---
+    input wire [31:0] frdata1,      // Giá trị từ Float RegFile (FRS1)
+    input wire [31:0] frdata2,      // Giá trị từ Float RegFile (FRS2)
+    input wire [31:0] frdata3,      // Giá trị từ Float RegFile (FRS3 - cho FMA)
+
+    // --- 3. TÍN HIỆU ĐIỀU KHIỂN ---
+    input wire [1:0]  alusrc_a,     // 00: Reg, 01: PC, 10: Zero...
+    input wire [1:0]  alusrc_b,     // 00: Reg, 01: Imm...
+    input wire        src1_is_float,// 1: Dùng FRS1, 0: Dùng RS1
+    input wire        src2_is_float,// 1: Dùng FRS2, 0: Dùng RS2
+    input wire        src3_is_float,// 1: Dùng FRS3 (Luôn là Float nếu dùng)
+
+    // --- 4. INPUT TỪ SCOREBOARD (Trạng thái Int) ---
+    input wire        sb_rs1_ready, input wire [2:0] sb_rs1_tag,
+    input wire        sb_rs2_ready, input wire [2:0] sb_rs2_tag,
+
+    // --- 5. INPUT TỪ SCOREBOARD (Trạng thái Float - Mới) ---
+    input wire        sb_frs1_ready, input wire [2:0] sb_frs1_tag,
+    input wire        sb_frs2_ready, input wire [2:0] sb_frs2_tag,
+    input wire        sb_frs3_ready, input wire [2:0] sb_frs3_tag,
+
+    // --- 6. OUTPUT ĐẾN RESERVATION STATION ---
+    // Toán hạng 1
+    output reg [31:0] disp_op1_val, 
+    output reg [2:0]  disp_op1_tag, 
+    output reg        disp_op1_ready,
+
+    // Toán hạng 2
+    output reg [31:0] disp_op2_val,
+    output reg [2:0]  disp_op2_tag,
+    output reg        disp_op2_ready,
+    
+    // Toán hạng 3 (Cho FMA)
+    output reg [31:0] disp_op3_val,
+    output reg [2:0]  disp_op3_tag,
+    output reg        disp_op3_ready
+);
+
+    // ============================================================
+    // LOGIC XỬ LÝ TOÁN HẠNG 1 (Int RS1 / Float FRS1 / PC)
+    // ============================================================
+    always @(*) begin
+        case (alusrc_a)
+            2'b00: begin // Chọn Register
+                if (src1_is_float) begin
+                    // --- Xử lý Float Register (FRS1) ---
+                    if (sb_frs1_ready) begin
+                        disp_op1_val   = frdata1;
+                        disp_op1_ready = 1'b1;
+                        disp_op1_tag   = 3'b0;
+                    end else begin
+                        disp_op1_val   = 32'd0;
+                        disp_op1_ready = 1'b0;
+                        disp_op1_tag   = sb_frs1_tag;
+                    end
+                end else begin
+                    // --- Xử lý Integer Register (RS1) ---
+                    if (sb_rs1_ready) begin
+                        disp_op1_val   = rdata1;
+                        disp_op1_ready = 1'b1;
+                        disp_op1_tag   = 3'b0;
+                    end else begin
+                        disp_op1_val   = 32'd0;
+                        disp_op1_ready = 1'b0;
+                        disp_op1_tag   = sb_rs1_tag;
+                    end
+                end
+            end
+            
+            2'b01: begin // Chọn PC
+                disp_op1_val   = pc;
+                disp_op1_ready = 1'b1;
+                disp_op1_tag   = 3'b0;
+            end
+            
+            default: begin
+                disp_op1_val   = 32'd0;
+                disp_op1_ready = 1'b1;
+                disp_op1_tag   = 3'b0;
+            end
+        endcase
+    end
+
+    // ============================================================
+    // LOGIC XỬ LÝ TOÁN HẠNG 2 (Int RS2 / Float FRS2 / Imm)
+    // ============================================================
+    always @(*) begin
+        case (alusrc_b)
+            2'b00: begin // Chọn Register
+                if (src2_is_float) begin
+                    // --- Xử lý Float Register (FRS2) ---
+                    if (sb_frs2_ready) begin
+                        disp_op2_val   = frdata2;
+                        disp_op2_ready = 1'b1;
+                        disp_op2_tag   = 3'b0;
+                    end else begin
+                        disp_op2_val   = 32'd0;
+                        disp_op2_ready = 1'b0;
+                        disp_op2_tag   = sb_frs2_tag;
+                    end
+                end else begin
+                    // --- Xử lý Integer Register (RS2) ---
+                    if (sb_rs2_ready) begin
+                        disp_op2_val   = rdata2;
+                        disp_op2_ready = 1'b1;
+                        disp_op2_tag   = 3'b0;
+                    end else begin
+                        disp_op2_val   = 32'd0;
+                        disp_op2_ready = 1'b0;
+                        disp_op2_tag   = sb_rs2_tag;
+                    end
+                end
+            end
+            
+            2'b01: begin // Chọn Immediate
+                disp_op2_val   = imm;
+                disp_op2_ready = 1'b1;
+                disp_op2_tag   = 3'b0;
+            end
+            
+            2'b10: begin // Chọn Constant 4 (cho PC+4)
+                disp_op2_val   = 32'd4;
+                disp_op2_ready = 1'b1;
+                disp_op2_tag   = 3'b0;
+            end
+
+            default: begin
+                disp_op2_val   = 32'd0;
+                disp_op2_ready = 1'b1;
+                disp_op2_tag   = 3'b0;
+            end
+        endcase
+    end
+
+    // ============================================================
+    // LOGIC XỬ LÝ TOÁN HẠNG 3 (Chỉ dùng cho FMA)
+    // ============================================================
+    always @(*) begin
+        if (src3_is_float) begin
+            // --- Xử lý Float Register (FRS3) ---
+            if (sb_frs3_ready) begin
+                disp_op3_val   = frdata3;
+                disp_op3_ready = 1'b1;
+                disp_op3_tag   = 3'b0;
+            end else begin
+                disp_op3_val   = 32'd0;
+                disp_op3_ready = 1'b0;
+                disp_op3_tag   = sb_frs3_tag;
+            end
+        end else begin
+            // Không dùng toán hạng 3 (Mặc định Ready để không chặn lệnh)
+            disp_op3_val   = 32'd0;
+            disp_op3_ready = 1'b1; 
+            disp_op3_tag   = 3'b0;
+        end
+    end
+
+endmodule

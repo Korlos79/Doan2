@@ -1,0 +1,237 @@
+module FPU(
+    input wire clk,
+    input wire rst_n,
+    input wire start,            
+    input wire [31:0] a_operand,
+    input wire [31:0] b_operand,
+    input wire [31:0] c_operand,
+    input wire [4:0]  FPUOpd,    
+    output reg [31:0] result,
+    output wire busy,            
+    output reg done,             
+    output reg Exception         
+);
+
+    // --- BẢNG OPCODE ---
+    localparam FADD   = 5'd0;
+    localparam FSUB   = 5'd1;
+    localparam FMUL   = 5'd2;
+    localparam FDIV   = 5'd3;
+    localparam FSQRT  = 5'd4;
+    localparam FMADD  = 5'd5;
+    localparam FMSUB  = 5'd6;
+    localparam FNMADD = 5'd7;
+    localparam FNMSUB = 5'd8;
+	 
+    localparam FSGNJ  = 5'd9;
+    localparam FSGNJN = 5'd10;
+    localparam FSGNJX = 5'd11;
+	 
+    localparam FEQ    = 5'd12;
+    localparam FLT    = 5'd13;
+    localparam FLE    = 5'd14;
+	 
+	 localparam FCVT_WS  = 5'd15;
+    localparam FCVT_WSU = 5'd16;
+    localparam FCVT_SW  = 5'd17;
+    localparam FCVT_SWU = 5'd18;
+
+	 
+    localparam FMV_XW = 5'd19;
+	 localparam FMV_WX = 5'd19;
+	 
+    localparam FMIN   = 5'd20;
+    localparam FMAX   = 5'd21;
+
+    // --- TRẠNG THÁI FSM ---
+    localparam S_IDLE           = 3'd0;
+    localparam S_WAIT_MUL       = 3'd1; 
+    localparam S_WAIT_HANDSHAKE = 3'd2; 
+    localparam S_FMA_WAIT_MUL   = 3'd3; 
+    localparam S_FMA_START_ADD  = 3'd4; 
+    localparam S_INSTANT_DONE   = 3'd5; 
+
+    reg [2:0] state;
+
+    // --- LOGIC BUSY ---
+    assign busy = (state != S_IDLE);
+
+    // --- 1. MULTIPLIER UNIT ---
+    reg mul_start;
+    wire [31:0] mul_res;
+    wire mul_done;
+    wire mul_exception;
+
+    multiplication MUL_UNIT (
+        .clk(clk), .rst_n(rst_n),
+        .start(mul_start),        
+        .a_in(a_operand), .b_in(b_operand),
+        .result(mul_res),
+        .busy(),                  
+        .done(mul_done),          
+        .Exception(mul_exception)
+    );
+
+    // --- 2. ADDER UNIT ---
+    reg [31:0] add_in_a, add_in_b;
+    reg        add_op_sub; 
+    reg        add_start;
+    wire [31:0] add_res;
+    wire       add_done, add_exception;
+
+    addition_subtraction ADD_UNIT (
+        .clk(clk), .rst_n(rst_n), .start(add_start),
+        .a_operand(add_in_a), .b_operand(add_in_b),
+        .busy(),                  
+        .done(add_done),
+        .AddBar_Sub(add_op_sub),
+        .Exception(add_exception), .result(add_res)
+    );
+
+    // --- 3. DIV & SQRT UNIT ---
+    reg div_start, sqrt_start;
+    wire [31:0] div_res, sqrt_res;
+    wire div_done, sqrt_done, sqrt_exc;
+    wire div_zero, div_overflow, div_underflow;
+    wire div_all_exc = div_zero | div_overflow | div_underflow;
+
+    division DIV_UNIT (
+        .clk(clk), .rst_n(rst_n), .start(div_start),
+        .A(a_operand), .B(b_operand),
+        .busy(),                  
+        .done(div_done), .result(div_res),
+        .zero_division(div_zero), .Overflow(div_overflow), .Underflow(div_underflow)
+    );
+
+    Sqrt SQRT_UNIT (
+        .clk(clk), .rst_n(rst_n), .start(sqrt_start),
+        .A(a_operand),
+        .busy(),                  
+        .done(sqrt_done), .result(sqrt_res),
+        .exception(sqrt_exc), .zero_sqrt()
+    );
+
+    // --- 4. CÁC MODULE PHỤ TRỢ ---
+    wire [31:0] cvt_sw_res, cvt_swu_res, cvt_ws_res, cvt_wsu_res;
+    wire cmp_eq, cmp_lt, cmp_le;
+
+    ConvfromSignInt CVT1(a_operand, cvt_sw_res);
+    ConvfromUnsInt  CVT2(a_operand, cvt_swu_res);
+    ConverttoInt    CVT3(a_operand, cvt_ws_res);
+    ConvertUnstoInt CVT4(a_operand, cvt_wsu_res);
+
+    compare CMP_EQ (a_operand, b_operand, 2'b00, cmp_eq);
+    compare CMP_LT (a_operand, b_operand, 2'b01, cmp_lt);
+    compare CMP_LE (a_operand, b_operand, 2'b10, cmp_le);
+
+    // --- FSM CONTROL LOGIC ---
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state <= S_IDLE;
+            result <= 0; done <= 0; Exception <= 0;
+            mul_start <= 0; add_start <= 0; div_start <= 0; sqrt_start <= 0;
+            add_in_a <= 0; add_in_b <= 0; add_op_sub <= 0;
+        end else begin
+            // Reset xung start
+            mul_start <= 0; add_start <= 0; div_start <= 0; sqrt_start <= 0;
+            done <= 0;
+
+            case (state)
+                S_IDLE: begin
+                    if (start) begin
+                        case (FPUOpd)
+                            FADD, FSUB: begin
+                                add_in_a <= a_operand;
+                                add_in_b <= b_operand;
+                                add_op_sub <= (FPUOpd == FSUB);
+                                add_start <= 1;
+                                state <= S_WAIT_HANDSHAKE;
+                            end
+                            FMUL: begin
+                                mul_start <= 1; 
+                                state <= S_WAIT_MUL;
+                            end
+                            FDIV: begin div_start <= 1; state <= S_WAIT_HANDSHAKE; end
+                            FSQRT: begin sqrt_start <= 1; state <= S_WAIT_HANDSHAKE; end
+                            FMADD, FMSUB, FNMADD, FNMSUB: begin
+                                mul_start <= 1; 
+                                state <= S_FMA_WAIT_MUL;
+                            end
+                            default: begin
+                                state <= S_INSTANT_DONE;
+                            end
+                        endcase
+                    end
+                end
+
+                S_INSTANT_DONE: begin
+                    done <= 1;
+                    Exception <= 0;
+                    state <= S_IDLE;
+                    case (FPUOpd)
+                        FSGNJ:  result <= {b_operand[31], a_operand[30:0]};
+                        FSGNJN: result <= {~b_operand[31], a_operand[30:0]};
+                        FSGNJX: result <= {a_operand[31] ^ b_operand[31], a_operand[30:0]};
+                        FEQ:    result <= {31'd0, cmp_eq};
+                        FLT:    result <= {31'd0, cmp_lt};
+                        FLE:    result <= {31'd0, cmp_le};
+                        FCVT_SW:  result <= cvt_sw_res;
+                        FCVT_SWU: result <= cvt_swu_res;
+                        FCVT_WS:  result <= cvt_ws_res;
+                        FCVT_WSU: result <= cvt_wsu_res;
+                        FMV_XW: result <= a_operand;
+                        FMIN:   result <= cmp_lt ? a_operand : b_operand;
+                        FMAX:   result <= cmp_lt ? b_operand : a_operand;
+                        default: result <= 0;
+                    endcase
+                end
+
+                S_WAIT_MUL: begin
+                    if (mul_done) begin
+                        result <= mul_res;
+                        Exception <= mul_exception;
+                        done <= 1;
+                        state <= S_IDLE;
+                    end
+                end
+
+                S_WAIT_HANDSHAKE: begin
+                    if (add_done) begin
+                        result <= add_res; Exception <= add_exception;
+                        done <= 1; state <= S_IDLE;
+                    end 
+                    else if (div_done) begin
+                        result <= div_res; Exception <= div_all_exc;
+                        done <= 1; state <= S_IDLE;
+                    end
+                    else if (sqrt_done) begin
+                        result <= sqrt_res; Exception <= sqrt_exc;
+                        done <= 1; state <= S_IDLE;
+                    end
+                end
+
+                S_FMA_WAIT_MUL: begin
+                    if (mul_done) begin
+                        // [FIXED] Bắt dữ liệu NGAY khi có done
+                        if (FPUOpd == FNMADD || FPUOpd == FNMSUB) 
+                            add_in_a <= {~mul_res[31], mul_res[30:0]};
+                        else
+                            add_in_a <= mul_res;
+                        
+                        state <= S_FMA_START_ADD;
+                    end
+                end
+
+                S_FMA_START_ADD: begin
+                    // add_in_a đã có dữ liệu từ bước trước
+                    add_in_b <= c_operand;
+                    add_op_sub <= (FPUOpd == FMSUB || FPUOpd == FNMSUB);
+                    
+                    add_start <= 1;
+                    state <= S_WAIT_HANDSHAKE;
+                end
+            endcase
+        end
+    end
+
+endmodule

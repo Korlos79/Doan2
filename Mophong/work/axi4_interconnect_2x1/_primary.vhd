@@ -1,0 +1,44 @@
+library verilog;
+use verilog.vl_types.all;
+entity axi4_interconnect_2x1 is
+    port(
+        clk             : in     vl_logic;
+        rst_n           : in     vl_logic;
+        s0_axi_araddr   : in     vl_logic_vector(31 downto 0);
+        s0_axi_arvalid  : in     vl_logic;
+        s0_axi_arready  : out    vl_logic;
+        s0_axi_rdata    : out    vl_logic_vector(31 downto 0);
+        s0_axi_rvalid   : out    vl_logic;
+        s0_axi_rready   : in     vl_logic;
+        s1_axi_araddr   : in     vl_logic_vector(31 downto 0);
+        s1_axi_arvalid  : in     vl_logic;
+        s1_axi_arready  : out    vl_logic;
+        s1_axi_rdata    : out    vl_logic_vector(31 downto 0);
+        s1_axi_rvalid   : out    vl_logic;
+        s1_axi_rready   : in     vl_logic;
+        s1_axi_awaddr   : in     vl_logic_vector(31 downto 0);
+        s1_axi_awvalid  : in     vl_logic;
+        s1_axi_awready  : out    vl_logic;
+        s1_axi_wdata    : in     vl_logic_vector(31 downto 0);
+        s1_axi_wstrb    : in     vl_logic_vector(3 downto 0);
+        s1_axi_wvalid   : in     vl_logic;
+        s1_axi_wready   : out    vl_logic;
+        s1_axi_bvalid   : out    vl_logic;
+        s1_axi_bready   : in     vl_logic;
+        m_axi_araddr    : out    vl_logic_vector(31 downto 0);
+        m_axi_arvalid   : out    vl_logic;
+        m_axi_arready   : in     vl_logic;
+        m_axi_rdata     : in     vl_logic_vector(31 downto 0);
+        m_axi_rvalid    : in     vl_logic;
+        m_axi_rready    : out    vl_logic;
+        m_axi_awaddr    : out    vl_logic_vector(31 downto 0);
+        m_axi_awvalid   : out    vl_logic;
+        m_axi_awready   : in     vl_logic;
+        m_axi_wdata     : out    vl_logic_vector(31 downto 0);
+        m_axi_wstrb     : out    vl_logic_vector(3 downto 0);
+        m_axi_wvalid    : out    vl_logic;
+        m_axi_wready    : in     vl_logic;
+        m_axi_bvalid    : in     vl_logic;
+        m_axi_bready    : out    vl_logic
+    );
+end axi4_interconnect_2x1;

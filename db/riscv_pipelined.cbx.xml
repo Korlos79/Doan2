@@ -1,0 +1,6 @@
+<?xml version="1.0" ?>
+<LOG_ROOT>
+	<PROJECT NAME="riscv_pipelined">
+		<CBX_INST_ENTRY INSTANCE_NAME="|fu_alu_wrapper|alu:ALU_CORE|rv32m_muldiv_split:U_MULDIV|iter_mul32:u_mul|lpm_mult:Mult0" CBX_FILE_NAME="mult_l8t.tdf"/>
+	</PROJECT>
+</LOG_ROOT>

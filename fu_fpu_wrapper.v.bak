@@ -1,0 +1,97 @@
+module fu_fpu_wrapper #(
+    parameter DATA_WIDTH = 32,
+    parameter TAG_WIDTH  = 3
+)(
+    input wire clk, rst_n,
+    
+    // Từ RS
+    input wire                   start,
+    input wire [4:0]             opcode, // FPUOpd
+    input wire [31:0]            op1, op2, op3,
+    input wire [TAG_WIDTH-1:0]   tag_in,
+    
+    output wire                  busy,
+
+    // Tới CDB
+    output reg                   cdb_valid,
+    output wire [DATA_WIDTH-1:0] cdb_result, // Nối thẳng từ FPU result
+    output reg  [TAG_WIDTH-1:0]  cdb_tag,
+    input  wire                  cdb_ack
+);
+
+    // 1. Instantiate FPU Gốc
+    wire fpu_done;
+    
+    FPU FPU_CORE (
+        .clk(clk), .rst_n(rst_n),
+        .start(start), .FPUOpd(opcode),
+        .a_operand(op1), .b_operand(op2), .c_operand(op3),
+        .result(cdb_result), // Kết quả từ FPU nối thẳng ra ngoài
+        .busy(busy), .done(fpu_done), .Exception()
+    );
+
+    // 2. Phân loại lệnh (Dựa vào Opcode trong FPU.v)
+    // MUL/ADD/FMA: Pipeline (Giả sử FADD/FMUL cũng 4 chu kì cho đồng bộ)
+    wire is_pipe = (opcode <= 8); 
+    // DIV/SQRT: Blocking
+    wire is_block = (opcode == 3 || opcode == 4); 
+    // Còn lại: Instant (1 cycle)
+    wire is_instant = !is_pipe && !is_block;
+
+    // 3. Quản lý Tag
+    
+    // A. Pipeline Tag (FIFO 4 stages)
+    reg [TAG_WIDTH-1:0] pipe_tag_fifo [0:3];
+    reg [3:0]           pipe_valid_fifo;
+    integer i;
+    
+    // B. Blocking Tag
+    reg [TAG_WIDTH-1:0] block_tag_reg;
+    
+    // C. Instant Tag
+    reg [TAG_WIDTH-1:0] inst_tag_reg;
+    reg                 inst_valid_reg;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            pipe_valid_fifo <= 0; inst_valid_reg <= 0;
+        end else begin
+            // --- Input Logic ---
+            if (start) begin
+                if (is_pipe) begin
+                    pipe_valid_fifo <= {pipe_valid_fifo[2:0], 1'b1};
+                    pipe_tag_fifo[0] <= tag_in;
+                end else if (is_block) begin
+                    block_tag_reg <= tag_in;
+                end else begin // Instant
+                    inst_valid_reg <= 1;
+                    inst_tag_reg   <= tag_in;
+                end
+            end else begin
+                // Shift pipeline khi không có start
+                pipe_valid_fifo <= {pipe_valid_fifo[2:0], 1'b0};
+            end
+            
+            // Shift Tag FIFO
+            for(i=1; i<4; i=i+1) pipe_tag_fifo[i] <= pipe_tag_fifo[i-1];
+            
+            // Clear Instant Valid khi có Ack
+            if (cdb_ack && inst_valid_reg) inst_valid_reg <= 0;
+        end
+    end
+
+    // 4. Output Logic
+    always @(*) begin
+        cdb_valid = 0;
+        cdb_tag   = 0;
+
+        if (fpu_done) begin
+            cdb_valid = 1;
+            // Xác định Tag nào tương ứng với cái Done này
+            if (pipe_valid_fifo[3])      cdb_tag = pipe_tag_fifo[3]; // Xong Pipeline
+            else if (busy)               cdb_tag = block_tag_reg;    // Xong Blocking (DIV)
+            else                         cdb_tag = inst_tag_reg;     // Xong Instant
+        end
+    end
+
+endmodule
