@@ -38,7 +38,7 @@
 
 set_global_assignment -name FAMILY "Cyclone II"
 set_global_assignment -name DEVICE AUTO
-set_global_assignment -name TOP_LEVEL_ENTITY fpu_top
+set_global_assignment -name TOP_LEVEL_ENTITY rv32ifm_ooo
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION "13.0 SP1"
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "10:48:21  APRIL 28, 2026"
 set_global_assignment -name LAST_QUARTUS_VERSION "13.0 SP1"
@@ -48,10 +48,6 @@ set_global_assignment -name DEVICE_FILTER_PIN_COUNT 672
 set_global_assignment -name DEVICE_FILTER_SPEED_GRADE FASTEST
 set_global_assignment -name EDA_SIMULATION_TOOL "ModelSim-Altera (Verilog)"
 set_global_assignment -name EDA_OUTPUT_DATA_FORMAT "VERILOG HDL" -section_id eda_simulation
-set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
-set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
-set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
-set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 set_global_assignment -name VERILOG_FILE FPU.v
 set_global_assignment -name VERILOG_FILE wallace_tree_12_rows.v
 set_global_assignment -name VERILOG_FILE tb_fp_sqrt.v
@@ -69,13 +65,11 @@ set_global_assignment -name VERILOG_FILE compressor_3_2_72bit.v
 set_global_assignment -name VERILOG_FILE booth_encoder_radix4.v
 set_global_assignment -name VERILOG_FILE as_test_bench.v
 set_global_assignment -name VERILOG_FILE addition_subtraction.v
-set_global_assignment -name VERILOG_FILE axi_simple_master.v
 set_global_assignment -name VERILOG_FILE dmem.v
 set_global_assignment -name VERILOG_FILE ConvfromUnsInt.v
 set_global_assignment -name VERILOG_FILE ConvfromSignInt.v
 set_global_assignment -name VERILOG_FILE ConvertUnstoInt.v
 set_global_assignment -name VERILOG_FILE ConverttoInt.v
-set_global_assignment -name VERILOG_FILE compare.v
 set_global_assignment -name VERILOG_FILE iter_mul32.v
 set_global_assignment -name VERILOG_FILE iter_div32.v
 set_global_assignment -name VERILOG_FILE alu.v
@@ -83,20 +77,27 @@ set_global_assignment -name VERILOG_FILE testlenh.v
 set_global_assignment -name VERILOG_FILE testbench_alu.v
 set_global_assignment -name VERILOG_FILE tb_iter_mul32.v
 set_global_assignment -name VERILOG_FILE tb_iter_div32.v
-set_global_assignment -name VERILOG_FILE Sign_Extend.v
-set_global_assignment -name VERILOG_FILE rs_lsu.v
-set_global_assignment -name VERILOG_FILE rs_alu.v
 set_global_assignment -name VERILOG_FILE ROB.v
-set_global_assignment -name VERILOG_FILE riscv_ooo_top.v
-set_global_assignment -name VERILOG_FILE rf_32_32.v
 set_global_assignment -name VERILOG_FILE RAT_Int.v
 set_global_assignment -name VERILOG_FILE RAT_Float.v
 set_global_assignment -name VERILOG_FILE PC.v
 set_global_assignment -name VERILOG_FILE instruction_Mem.v
 set_global_assignment -name VERILOG_FILE IF_ID_register.v
-set_global_assignment -name VERILOG_FILE fu_lsu_wrapper.v
 set_global_assignment -name VERILOG_FILE fu_fpu_wrapper.v
 set_global_assignment -name VERILOG_FILE fu_alu_wrapper.v
-set_global_assignment -name VERILOG_FILE fpr_32_32.v
 set_global_assignment -name VERILOG_FILE dispatch_unit.v
 set_global_assignment -name VERILOG_FILE Control_Unit.v
+set_global_assignment -name VERILOG_FILE iq_alu.v
+set_global_assignment -name VERILOG_FILE iq_fpu.v
+set_global_assignment -name VERILOG_FILE iq_mem.v
+set_global_assignment -name VERILOG_FILE prf.v
+set_global_assignment -name VERILOG_FILE free_list.v
+set_global_assignment -name VERILOG_FILE fu_lsu_wrapper.v
+set_global_assignment -name VERILOG_FILE rv32ifm_ooo.v
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_global_assignment -name VERILOG_FILE tb_ooo_proof.v
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
+set_global_assignment -name VERILOG_FILE FPU_tb.v
+set_global_assignment -name VERILOG_FILE branch_predictor.v

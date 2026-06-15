@@ -1,1 +1,3 @@
 Info (10281): Verilog HDL Declaration information at fp_div_goldschmidt.v(176): object "N2_dly" differs only in case from object "n2_dly" in the same scope
+Info (10281): Verilog HDL Declaration information at ROB.v(24): object "ROB_IDX" differs only in case from object "rob_idx" in the same scope
+Info (10281): Verilog HDL Declaration information at dispatch_unit.v(14): object "ROB_IDX" differs only in case from object "rob_idx" in the same scope

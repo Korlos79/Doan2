@@ -59,6 +59,7 @@ module FPU (
     localparam FMV_XW   = 5'd19;
     localparam FMIN     = 5'd20;
     localparam FMAX     = 5'd21;
+    localparam FMV_WX   = 5'd22;   // [FIX] FMV.W.X (Int→FP bit-cast) tách riêng khỏi FCVT_SW
 
     // =========================================================================
     //  COMPARE (dùng cho FEQ/FLT/FLE/FMIN/FMAX)
@@ -92,7 +93,7 @@ module FPU (
     ConvertUnstoInt CVT4 (a_operand, cvt_wsu_res);
 
     // =========================================================================
-    //  1. ADDITION / SUBTRACTION UNIT
+    //  1. ADDITION / SUBTRACTION UNIT (4 chu kì)
     // =========================================================================
     reg  [31:0] add_a_r, add_b_r;
     reg         add_op_sub_r;
@@ -117,7 +118,7 @@ module FPU (
     );
 
     // =========================================================================
-    //  2. MULTIPLY UNIT
+    //  2. MULTIPLY UNIT (3 chu kì)
     // =========================================================================
     reg  [31:0] mul_a_r, mul_b_r;
     reg         mul_start_r;
@@ -140,7 +141,7 @@ module FPU (
     );
 
     // =========================================================================
-    //  3. DIVISION UNIT
+    //  3. DIVISION UNIT () (13 chu kì)
     // =========================================================================
     reg  [31:0] div_a_r, div_b_r;
     reg         div_start_r;
@@ -163,7 +164,7 @@ module FPU (
     );
 
     // =========================================================================
-    //  4. SQUARE ROOT UNIT
+    //  4. SQUARE ROOT UNIT (21 chu kì)
     // =========================================================================
     reg  [31:0] sqrt_a_r;
     reg         sqrt_start_r;
@@ -381,7 +382,11 @@ module FPU (
                         tag_out <= tag_in; done <= 1'b1;
                     end
                     FMV_XW: begin
-                        result  <= a_operand;
+                        result  <= a_operand;   // bit-cast FP→Int
+                        tag_out <= tag_in; done <= 1'b1;
+                    end
+                    FMV_WX: begin
+                        result  <= a_operand;   // bit-cast Int→FP (giá trị bits không đổi)
                         tag_out <= tag_in; done <= 1'b1;
                     end
                     FMIN: begin

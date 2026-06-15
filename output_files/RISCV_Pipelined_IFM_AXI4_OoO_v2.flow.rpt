@@ -1,5 +1,5 @@
 Flow report for RISCV_Pipelined_IFM_AXI4_OoO_v2
-Wed May 13 23:01:26 2026
+Mon May 25 13:33:44 2026
 Quartus II 64-Bit Version 13.0.1 Build 232 06/12/2013 Service Pack 1 SJ Web Edition
 
 
@@ -40,20 +40,20 @@ applicable agreement for further details.
 +--------------------------------------------------------------------------------------+
 ; Flow Summary                                                                         ;
 +------------------------------------+-------------------------------------------------+
-; Flow Status                        ; Successful - Wed May 13 23:01:25 2026           ;
+; Flow Status                        ; Flow Failed - Mon May 25 13:33:44 2026          ;
 ; Quartus II 64-Bit Version          ; 13.0.1 Build 232 06/12/2013 SP 1 SJ Web Edition ;
 ; Revision Name                      ; RISCV_Pipelined_IFM_AXI4_OoO_v2                 ;
-; Top-level Entity Name              ; fpu_top                                         ;
+; Top-level Entity Name              ; rv32ifm_ooo                                     ;
 ; Family                             ; Cyclone II                                      ;
-; Total logic elements               ; 18,732                                          ;
-;     Total combinational functions  ; 18,427                                          ;
-;     Dedicated logic registers      ; 1,662                                           ;
-; Total registers                    ; 1662                                            ;
-; Total pins                         ; 104                                             ;
-; Total virtual pins                 ; 0                                               ;
-; Total memory bits                  ; 8,541                                           ;
-; Embedded Multiplier 9-bit elements ; 0                                               ;
-; Total PLLs                         ; 0                                               ;
+; Total logic elements               ; N/A until Partition Merge                       ;
+;     Total combinational functions  ; N/A until Partition Merge                       ;
+;     Dedicated logic registers      ; N/A until Partition Merge                       ;
+; Total registers                    ; N/A until Partition Merge                       ;
+; Total pins                         ; N/A until Partition Merge                       ;
+; Total virtual pins                 ; N/A until Partition Merge                       ;
+; Total memory bits                  ; N/A until Partition Merge                       ;
+; Embedded Multiplier 9-bit elements ; N/A until Partition Merge                       ;
+; Total PLLs                         ; N/A until Partition Merge                       ;
 +------------------------------------+-------------------------------------------------+
 
 
@@ -62,7 +62,7 @@ applicable agreement for further details.
 +-------------------+---------------------------------+
 ; Option            ; Setting                         ;
 +-------------------+---------------------------------+
-; Start date & time ; 05/13/2026 23:00:44             ;
+; Start date & time ; 05/25/2026 13:33:39             ;
 ; Main task         ; Compilation                     ;
 ; Revision Name     ; RISCV_Pipelined_IFM_AXI4_OoO_v2 ;
 +-------------------+---------------------------------+
@@ -73,14 +73,14 @@ applicable agreement for further details.
 +-------------------------------------+---------------------------------+---------------------------------+-------------+----------------+
 ; Assignment Name                     ; Value                           ; Default Value                   ; Entity Name ; Section Id     ;
 +-------------------------------------+---------------------------------+---------------------------------+-------------+----------------+
-; COMPILER_SIGNATURE_ID               ; 233730243168354.177868804412928 ; --                              ; --          ; --             ;
+; COMPILER_SIGNATURE_ID               ; 233730243168354.177969081911996 ; --                              ; --          ; --             ;
 ; EDA_OUTPUT_DATA_FORMAT              ; Verilog Hdl                     ; --                              ; --          ; eda_simulation ;
 ; EDA_SIMULATION_TOOL                 ; ModelSim-Altera (Verilog)       ; <None>                          ; --          ; --             ;
-; PARTITION_COLOR                     ; 16764057                        ; --                              ; fpu_top     ; Top            ;
-; PARTITION_FITTER_PRESERVATION_LEVEL ; PLACEMENT_AND_ROUTING           ; --                              ; fpu_top     ; Top            ;
-; PARTITION_NETLIST_TYPE              ; SOURCE                          ; --                              ; fpu_top     ; Top            ;
+; PARTITION_COLOR                     ; 16764057                        ; --                              ; rv32ifm_ooo ; Top            ;
+; PARTITION_FITTER_PRESERVATION_LEVEL ; PLACEMENT_AND_ROUTING           ; --                              ; rv32ifm_ooo ; Top            ;
+; PARTITION_NETLIST_TYPE              ; SOURCE                          ; --                              ; rv32ifm_ooo ; Top            ;
 ; PROJECT_OUTPUT_DIRECTORY            ; output_files                    ; --                              ; --          ; --             ;
-; TOP_LEVEL_ENTITY                    ; fpu_top                         ; RISCV_Pipelined_IFM_AXI4_OoO_v2 ; --          ; --             ;
+; TOP_LEVEL_ENTITY                    ; rv32ifm_ooo                     ; RISCV_Pipelined_IFM_AXI4_OoO_v2 ; --          ; --             ;
 +-------------------------------------+---------------------------------+---------------------------------+-------------+----------------+
 
 
@@ -89,8 +89,8 @@ applicable agreement for further details.
 +----------------------+--------------+-------------------------+---------------------+------------------------------------+
 ; Module Name          ; Elapsed Time ; Average Processors Used ; Peak Virtual Memory ; Total CPU Time (on all processors) ;
 +----------------------+--------------+-------------------------+---------------------+------------------------------------+
-; Analysis & Synthesis ; 00:00:41     ; 1.0                     ; 4709 MB             ; 00:00:40                           ;
-; Total                ; 00:00:41     ; --                      ; --                  ; 00:00:40                           ;
+; Analysis & Synthesis ; 00:00:05     ; 1.0                     ; 4934 MB             ; 00:00:04                           ;
+; Total                ; 00:00:05     ; --                      ; --                  ; 00:00:04                           ;
 +----------------------+--------------+-------------------------+---------------------+------------------------------------+
 
 

@@ -165,9 +165,14 @@ module Control_Unit (
     // =========================================================================
     // Functional Unit routing
     // =========================================================================
-    assign to_fpu = is_fp_r4 | is_fp_arith | is_fp_load | is_fp_store;
+    // [FIX-1] FP load/store chỉ đi qua LSU, KHÔNG vào IQ_FPU.
+    // Trước đây to_fpu=1 cho cả is_fp_load/is_fp_store nên dispatch_unit
+    // gửi lệnh FLW/FSW vào cả IQ_FPU lẫn IQ_LSU — sai logic.
+    // FLW/FSW chỉ cần LSU để tính địa chỉ và đọc/ghi dmem.
+    // PRF routing (fp_rd, fp_rs2) đã đủ để chọn đúng register file mà không
+    // cần route qua IQ_FPU.
+    assign to_fpu = is_fp_r4 | is_fp_arith;   // FP arithmetic thuần
     assign to_lsu = is_load | is_store | is_fp_load | is_fp_store;
-    // Lưu ý: load/store dùng LSU nhưng FP load/store cũng cần FPU PRF
     assign to_alu = ~to_fpu & ~to_lsu;
 
     // =========================================================================
@@ -189,9 +194,11 @@ module Control_Unit (
 
     assign fp_rs1 = (is_fp_arith && !fcvt_to_fp) | is_fp_r4 | is_fp_store;
     assign fp_rs2 = (is_fp_arith && !fcvt_to_int && !fcvt_to_fp && !fclass &&
-                     funct5 != 5'b01011) | is_fp_r4;  // trừ FSQRT
+                     funct5 != 5'b01011) | is_fp_r4;
     assign fp_rs3 = is_fp_r4;
-    assign fp_rd  = (is_fp_arith && !fcvt_to_int) | is_fp_r4 | is_fp_load;
+    // [FIX-FLE] FEQ/FLT/FLE (fcmp) ghi kết quả vào INT register, KHÔNG phải FP
+    // Thêm !fcmp để tránh rename rd vào FP PRF khi là lệnh so sánh FP
+    assign fp_rd  = (is_fp_arith && !fcvt_to_int && !fcmp) | is_fp_r4 | is_fp_load;
 
     // =========================================================================
     // Source / Destination usage
@@ -296,8 +303,11 @@ module Control_Unit (
                 end
                 5'b11000: fpu_op_r = (inst[20]) ? 5'd16 : 5'd15; // FCVT.W.S / FCVT.WU.S
                 5'b11010: fpu_op_r = (inst[20]) ? 5'd18 : 5'd17; // FCVT.S.W / FCVT.S.WU
-                5'b11100: fpu_op_r = 5'd19;   // FMV.X.W
-                5'b11110: fpu_op_r = 5'd17;   // FMV.W.X → dùng FCVT_SW slot
+                5'b11100: fpu_op_r = (funct3 == 3'b001) ? 5'd19 : 5'd15;
+                           // funct3=001 → FCLASS (trả về Int, nhưng dùng slot 15 tạm thời)
+                           // funct3=000 → FMV.X.W = 19
+                           // Sửa lại: FMV.X.W funct5=11100 funct3=000 → 19
+                5'b11110: fpu_op_r = 5'd22;  // FMV.W.X → slot riêng 22 tránh trùng FCVT_SW=17
                 default:  fpu_op_r = 5'd0;
             endcase
         end else begin

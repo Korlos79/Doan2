@@ -1,0 +1,175 @@
+// =============================================================================
+// lsu_eu.v  —  Load / Store Unit  (Execute Stage)
+//
+// Xử lý:
+//   LOAD  (LB/LH/LW/LBU/LHU, FLW): tính địa chỉ → đọc dmem → WB
+//   STORE (SB/SH/SW, FSW)         : tính địa chỉ + lưu data vào ROB
+//                                   ROB commit mới thực sự ghi dmem
+//
+// Cấu trúc:
+//   • Stage 1 (EX1): tính addr = rs1 + imm
+//   • Stage 2 (EX2): load → đọc dmem (latency 1 cycle)
+//   • Store: chỉ báo địa chỉ + data cho ROB, không ghi dmem ngay
+//
+// dmem.v giao tiếp:
+//   • Ghi (store commit): từ ROB commit → chỉ 1 cổng ghi
+//   • Đọc (load):         từ LSU EX2
+// =============================================================================
+
+module lsu_eu #(
+    parameter TAG_WIDTH = 6,
+    parameter ROB_IDX   = 5
+)(
+    input  wire        clk,
+    input  wire        rst_n,
+    input  wire        flush,
+
+    // -------------------------------------------------------------------------
+    // Từ IQ_LSU (Issue)
+    // -------------------------------------------------------------------------
+    input  wire                  issue_valid,
+    input  wire [TAG_WIDTH-1:0]  issue_prd,
+    input  wire [31:0]           issue_rs1_val,
+    input  wire [31:0]           issue_rs2_val,   // Store data
+    input  wire [31:0]           issue_imm,
+    input  wire [2:0]            issue_lsu_op,    // {is_store, funct3[1:0]}
+    input  wire [ROB_IDX-1:0]   issue_rob_idx,
+    input  wire                  issue_is_load,
+    input  wire                  issue_is_store,
+    input  wire                  issue_is_fp_load,
+    input  wire                  issue_is_fp_store,
+
+    // -------------------------------------------------------------------------
+    // Load Writeback Port 3
+    // -------------------------------------------------------------------------
+    output reg                   wb3_valid,
+    output reg  [ROB_IDX-1:0]   wb3_rob_idx,
+    output reg  [31:0]           wb3_result,
+    output reg                   wb3_exc,
+    output reg  [TAG_WIDTH-1:0]  wb3_prd,
+
+    // -------------------------------------------------------------------------
+    // Store Writeback (đến ROB — lưu addr/data, chưa ghi dmem)
+    // -------------------------------------------------------------------------
+    output reg                   wbs_valid,
+    output reg  [ROB_IDX-1:0]   wbs_rob_idx,
+    output reg  [31:0]           wbs_store_addr,
+    output reg  [31:0]           wbs_store_data,
+    output reg  [2:0]            wbs_store_mode,
+
+    // -------------------------------------------------------------------------
+    // dmem interface
+    // -------------------------------------------------------------------------
+    // Load (từ LSU)
+    output wire        dmem_re,
+    output wire [2:0]  dmem_load_mode,
+    output wire [9:0]  dmem_addr,
+    input  wire [31:0] dmem_rdata,
+
+    // Store commit (từ ROB)
+    input  wire        dmem_we,
+    input  wire [2:0]  dmem_store_mode,
+    input  wire [9:0]  dmem_waddr,
+    input  wire [31:0] dmem_wdata
+);
+
+    // =========================================================================
+    // EX1: Tính địa chỉ
+    // =========================================================================
+    wire is_store_w  = issue_lsu_op[2];
+    wire is_load_w   = issue_valid && !is_store_w;
+    wire is_store_vw = issue_valid &&  is_store_w;
+
+    wire [31:0] eff_addr = issue_rs1_val + issue_imm;
+    wire [2:0]  funct3   = {1'b0, issue_lsu_op[1:0]};  // mode cho dmem
+
+    // Pipeline register EX1 → EX2
+    reg                  ex2_valid;
+    reg [ROB_IDX-1:0]   ex2_rob_idx;
+    reg [TAG_WIDTH-1:0]  ex2_prd;
+    reg [9:0]            ex2_addr;
+    reg [2:0]            ex2_mode;
+    reg                  ex2_is_load;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n || flush) begin
+            ex2_valid   <= 1'b0;
+            wbs_valid   <= 1'b0;
+        end else begin
+            // Store: ghi ngay vào store buffer (ROB)
+            wbs_valid      <= is_store_vw;
+            wbs_rob_idx    <= issue_rob_idx;
+            wbs_store_addr <= eff_addr;
+            wbs_store_data <= issue_rs2_val;
+            wbs_store_mode <= {issue_is_fp_store, issue_lsu_op[1:0]};
+
+            // Load: chuyển sang EX2
+            ex2_valid   <= is_load_w;
+            ex2_rob_idx <= issue_rob_idx;
+            ex2_prd     <= issue_prd;
+            ex2_addr    <= eff_addr[9:0];
+            // Mode: LB=000, LH=001, LW=010, LBU=100, LHU=101
+            ex2_mode    <= (issue_is_fp_load) ? 3'b010 :  // FLW → LW
+                           {issue_lsu_op[1:0] == 2'b00 ? 1'b0 :
+                            issue_lsu_op[1:0] == 2'b01 ? 1'b0 : 1'b0,
+                            issue_lsu_op[1:0]};
+            ex2_is_load <= is_load_w;
+        end
+    end
+
+    // =========================================================================
+    // EX2: Đọc dmem (Load)
+    // =========================================================================
+    assign dmem_re        = ex2_valid && ex2_is_load;
+    assign dmem_addr      = ex2_addr;
+    assign dmem_load_mode = ex2_mode;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n || flush) begin
+            wb3_valid <= 1'b0;
+        end else begin
+            wb3_valid   <= ex2_valid && ex2_is_load;
+            wb3_rob_idx <= ex2_rob_idx;
+            wb3_prd     <= ex2_prd;
+            wb3_result  <= dmem_rdata;
+            wb3_exc     <= 1'b0;
+        end
+    end
+
+endmodule
+
+// =============================================================================
+// dmem_wrapper.v  —  Bọc dmem.v để dùng trong LSU
+// Chia sẻ cổng ghi (store commit từ ROB) và đọc (load từ LSU)
+// =============================================================================
+module fu_lsu_wrapper (
+    input  wire        clk,
+
+    // Load (từ LSU)
+    input  wire        re,
+    input  wire [2:0]  load_mode,
+    input  wire [9:0]  load_addr,
+    output wire [31:0] load_data,
+
+    // Store commit (từ ROB)
+    input  wire        we,
+    input  wire [2:0]  store_mode,
+    input  wire [9:0]  store_addr,
+    input  wire [31:0] store_data
+);
+
+    wire [31:0] mem_out;
+
+    dmem u_dmem (
+        .clk        (clk),
+        .we         (we),
+        .re         (re),
+        .mode       (we ? store_mode : load_mode),
+        .addr       (we ? store_addr : load_addr),
+        .write_data (store_data),
+        .mem_out    (mem_out)
+    );
+
+    assign load_data = mem_out;
+
+endmodule

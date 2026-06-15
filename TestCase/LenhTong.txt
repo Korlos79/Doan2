@@ -1,18 +1,38 @@
+DivMul
 06400093 // addi x1, x0, 100
 00500113 // addi x2, x0, 5
 00a00293 // addi x5, x0, 10
 01400313 // addi x6, x0, 20
-0220c1b3 // div  x3, x1, x2  (Tag A - Cực chậm)
+0220c1b3 // div  x3, x1, x2  (Tag A - Cực chậm) -> 35 chu kì
 006283b3 // add  x7, x5, x6  (Tag B - Chạy trước cả Tag A)
 40538433 // sub  x8, x7, x5  (Tag C - Chạy trước cả Tag A)
 02518233 // mul  x4, x3, x5  (Tag D - Phải đợi Tag A)
  
-01000093 // addi x1, x0, 16  (Base Address)
-07b00113 // addi x2, x0, 123 (Data to store)
-0020a023 // sw   x2, 0(x1)   (Store word: RAM[16] = x2)
-0000a183 // lw   x3, 0(x1)   (Load word: x3 = RAM[16])
-00118213 // addi x4, x3, 1   (Tính toán sau khi Load)
+Load/Store
+01000093 // addi x1, x0, 16
+02a00113 // addi x2, x0, 42
+0020a023 // sw x2, 0(x1)
+0000a183 // lw x3, 0(x1)
+00a18213 // addi x4, x3, 10
+06300293 // addi x5, x0, 99
 
+Branch
+00300093 // addi x1, x0, 3
+00500113 // addi x2, x0, 5
+00209663 // bne  x1, x2, +14 
+06300113 // addi x2, x0, 99
+401101b3 // sub x3, x2, x1 
+02a00113 // addi x2, x0, 42
+
+Jump
+00000113 // addi x2, x0, 0
+008000ef // jal x1, 0x00000008
+06300193 // addi x3, x0, 99
+01810267 // jalr x4, x2, 24
+05800193 // addi x3, x0, 88
+02a00293 // addi x5, x0, 42
+
+R
 00a00513  // addi x10, x0, 10      (x10 = 10)
 00500593  // addi x11, x0, 5       (x11 = 5)
 00f57613  // andi x12, x10, 15     (x12 = x10 & 15)
@@ -35,3 +55,17 @@ fff54713  // xori x14, x10, -1     (x14 = ~x10)
 00b56e33  // or  x28, x10, x11     (x28 = 15)
 00b57eb3  // and x29, x10, x11     (x29 = 0)
 
+F
+00900093 // addi x1, x0, 9 
+00200113 // addi x2, x0, 2
+d000f0d3 // fcvt.s.w f1, x1 
+d0017153 // fcvt.s.w f2, x2
+0020f1d3 // fadd.s f3, f1, f2 
+0820f253 // fsub.s f4, f1, f2
+1041f2d3 // fmul.s f5, f3, f4
+1820f353 // fdiv.s f6, f1, f2
+5800f3d3 // fsqrt.s f7, f1
+a06381d3 // fle.s x3, f7, f6
+00019463 // bne x3, x0, 0x8 
+06300213 // addi x4, x0, 99 
+02a00213 // addi x4, x0, 42

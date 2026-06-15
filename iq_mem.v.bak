@@ -1,0 +1,244 @@
+// =============================================================================
+// iq_mem.v  —  Issue Queue cho LSU (Load / Store Unit)
+//
+// Payload riêng của MEM:
+//   • rs1_val  (base address — luôn là Int reg)
+//   • rs2_val  (store data — có thể là FP reg với FSW)
+//   • imm      (offset)
+//   • lsu_op   [2:0] = {is_store, funct3[1:0]}
+//   • prd, rob_idx
+//   • is_load, is_store, is_fp_load, is_fp_store
+//   • fp_rs2   (store data đến từ FP PRF)
+//
+// KHÔNG có: alu_op, fpu_op, pc, branch, jal, lui, rs3
+//
+// CDB snoop:
+//   • rs1 (base addr): có thể đến từ ALU/MUL/DIV/Load
+//   • rs2 (store data): có thể đến từ ALU/FPU/Load
+//   → snoop cả 4 CDB port cho cả rs1 và rs2
+// =============================================================================
+
+module iq_mem #(
+    parameter NUM_RS    = 8,
+    parameter TAG_WIDTH = 6,
+    parameter ROB_IDX   = 5
+)(
+    input  wire        clk,
+    input  wire        rst_n,
+    input  wire        flush,
+
+    // -------------------------------------------------------------------------
+    // Write port (từ Dispatch)
+    // -------------------------------------------------------------------------
+    input  wire                  wr_en,
+    input  wire [TAG_WIDTH-1:0]  wr_prd,        // Chỉ dùng khi is_load
+    input  wire [TAG_WIDTH-1:0]  wr_prs1,       // Base address tag (Int PRF)
+    input  wire                  wr_prs1_ready,
+    input  wire [TAG_WIDTH-1:0]  wr_prs2,       // Store data tag (Int hoặc FP PRF)
+    input  wire                  wr_prs2_ready,
+    input  wire [31:0]           wr_imm,
+    input  wire [2:0]            wr_lsu_op,     // {is_store, funct3[1:0]}
+    input  wire [ROB_IDX-1:0]   wr_rob_idx,
+    input  wire                  wr_is_load,
+    input  wire                  wr_is_store,
+    input  wire                  wr_is_fp_load,
+    input  wire                  wr_is_fp_store,
+    input  wire                  wr_fp_rd,      // Destination là FP PRF (FLW)
+    input  wire                  wr_fp_rs2,     // Store data từ FP PRF (FSW)
+
+    output wire                  full,
+
+    // -------------------------------------------------------------------------
+    // CDB (4 port)
+    // -------------------------------------------------------------------------
+    input  wire [TAG_WIDTH-1:0]  cdb0_tag,
+    input  wire                  cdb0_valid,
+    input  wire [31:0]           cdb0_data,
+
+    input  wire [TAG_WIDTH-1:0]  cdb1_tag,
+    input  wire                  cdb1_valid,
+    input  wire [31:0]           cdb1_data,
+
+    input  wire [TAG_WIDTH-1:0]  cdb2_tag,
+    input  wire                  cdb2_valid,
+    input  wire [31:0]           cdb2_data,
+
+    input  wire [TAG_WIDTH-1:0]  cdb3_tag,
+    input  wire                  cdb3_valid,
+    input  wire [31:0]           cdb3_data,
+
+    // -------------------------------------------------------------------------
+    // PRF read request (combinational)
+    // rs1 → Int PRF (base addr luôn Int)
+    // rs2 → Int hoặc FP PRF tùy fp_rs2; caller quyết định route
+    // -------------------------------------------------------------------------
+    output wire [TAG_WIDTH-1:0]  prf_rs1_tag,
+    output wire [TAG_WIDTH-1:0]  prf_rs2_tag,
+    input  wire [31:0]           prf_rs1_data,  // từ Int PRF
+    input  wire [31:0]           prf_rs2_data,  // từ Int hoặc FP PRF
+
+    // -------------------------------------------------------------------------
+    // Issue output → LSU EU
+    // -------------------------------------------------------------------------
+    output reg                   issue_valid,
+    output reg  [TAG_WIDTH-1:0]  issue_prd,
+    output reg  [ROB_IDX-1:0]   issue_rob_idx,
+    output reg  [31:0]           issue_rs1_val,  // Base address
+    output reg  [31:0]           issue_rs2_val,  // Store data
+    output reg  [31:0]           issue_imm,
+    output reg  [2:0]            issue_lsu_op,
+    output reg                   issue_is_load,
+    output reg                   issue_is_store,
+    output reg                   issue_is_fp_load,
+    output reg                   issue_is_fp_store,
+    output reg                   issue_fp_rd,
+    output reg                   issue_fp_rs2
+);
+
+    // =========================================================================
+    // Storage
+    // =========================================================================
+    reg                  rs_valid      [0:NUM_RS-1];
+    reg [TAG_WIDTH-1:0]  rs_prd        [0:NUM_RS-1];
+    reg [TAG_WIDTH-1:0]  rs_prs1       [0:NUM_RS-1];
+    reg [TAG_WIDTH-1:0]  rs_prs2       [0:NUM_RS-1];
+    reg                  rs_prs1_rdy   [0:NUM_RS-1];
+    reg                  rs_prs2_rdy   [0:NUM_RS-1];
+    reg [31:0]           rs_rs1_val    [0:NUM_RS-1];
+    reg [31:0]           rs_rs2_val    [0:NUM_RS-1];
+    reg [31:0]           rs_imm        [0:NUM_RS-1];
+    reg [2:0]            rs_lsu_op     [0:NUM_RS-1];
+    reg [ROB_IDX-1:0]   rs_rob_idx    [0:NUM_RS-1];
+    reg                  rs_is_load    [0:NUM_RS-1];
+    reg                  rs_is_store   [0:NUM_RS-1];
+    reg                  rs_is_fp_load [0:NUM_RS-1];
+    reg                  rs_is_fp_store[0:NUM_RS-1];
+    reg                  rs_fp_rd      [0:NUM_RS-1];
+    reg                  rs_fp_rs2     [0:NUM_RS-1];
+    reg                  rs_age        [0:NUM_RS-1];
+
+    // =========================================================================
+    // Free slot
+    // =========================================================================
+    integer fi;
+    reg [$clog2(NUM_RS)-1:0] free_slot;
+    reg found_free;
+    always @(*) begin
+        free_slot  = 0;
+        found_free = 1'b0;
+        for (fi = NUM_RS-1; fi >= 0; fi = fi - 1)
+            if (!rs_valid[fi]) begin free_slot = fi[$clog2(NUM_RS)-1:0]; found_free = 1'b1; end
+    end
+    assign full = !found_free;
+
+    // =========================================================================
+    // Issue selection (oldest-first, rs1+rs2 ready)
+    // Với STORE: rs2 (data) cần ready trước khi issue
+    // Với LOAD:  rs2 không cần (không có data src), wr_prs2_ready = 1 khi dispatch
+    // =========================================================================
+    integer si;
+    reg [$clog2(NUM_RS)-1:0] issue_slot;
+    reg found_issue;
+    always @(*) begin
+        issue_slot  = 0;
+        found_issue = 1'b0;
+        for (si = 0; si < NUM_RS; si = si + 1)
+            if (rs_valid[si] && rs_prs1_rdy[si] && rs_prs2_rdy[si]) begin
+                if (!found_issue || rs_age[si]) begin
+                    issue_slot  = si[$clog2(NUM_RS)-1:0];
+                    found_issue = 1'b1;
+                end
+            end
+    end
+
+    assign prf_rs1_tag = rs_prs1[issue_slot];
+    assign prf_rs2_tag = rs_prs2[issue_slot];
+
+    // =========================================================================
+    // Main
+    // =========================================================================
+    integer i;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n || flush) begin
+            issue_valid <= 1'b0;
+            for (i = 0; i < NUM_RS; i = i + 1) begin
+                rs_valid[i] <= 1'b0;
+                rs_age[i]   <= 1'b0;
+            end
+        end else begin
+            issue_valid <= 1'b0;
+
+            // ------------------------------------------------------------------
+            // 1. CDB Snoop (rs1 + rs2)
+            // ------------------------------------------------------------------
+            for (i = 0; i < NUM_RS; i = i + 1) begin
+                if (rs_valid[i]) begin
+                    if (cdb0_valid) begin
+                        if (!rs_prs1_rdy[i] && rs_prs1[i] == cdb0_tag) begin rs_prs1_rdy[i] <= 1'b1; rs_rs1_val[i] <= cdb0_data; end
+                        if (!rs_prs2_rdy[i] && rs_prs2[i] == cdb0_tag) begin rs_prs2_rdy[i] <= 1'b1; rs_rs2_val[i] <= cdb0_data; end
+                    end
+                    if (cdb1_valid) begin
+                        if (!rs_prs1_rdy[i] && rs_prs1[i] == cdb1_tag) begin rs_prs1_rdy[i] <= 1'b1; rs_rs1_val[i] <= cdb1_data; end
+                        if (!rs_prs2_rdy[i] && rs_prs2[i] == cdb1_tag) begin rs_prs2_rdy[i] <= 1'b1; rs_rs2_val[i] <= cdb1_data; end
+                    end
+                    if (cdb2_valid) begin
+                        if (!rs_prs1_rdy[i] && rs_prs1[i] == cdb2_tag) begin rs_prs1_rdy[i] <= 1'b1; rs_rs1_val[i] <= cdb2_data; end
+                        if (!rs_prs2_rdy[i] && rs_prs2[i] == cdb2_tag) begin rs_prs2_rdy[i] <= 1'b1; rs_rs2_val[i] <= cdb2_data; end
+                    end
+                    if (cdb3_valid) begin
+                        if (!rs_prs1_rdy[i] && rs_prs1[i] == cdb3_tag) begin rs_prs1_rdy[i] <= 1'b1; rs_rs1_val[i] <= cdb3_data; end
+                        if (!rs_prs2_rdy[i] && rs_prs2[i] == cdb3_tag) begin rs_prs2_rdy[i] <= 1'b1; rs_rs2_val[i] <= cdb3_data; end
+                    end
+                end
+            end
+
+            // ------------------------------------------------------------------
+            // 2. Write
+            // ------------------------------------------------------------------
+            if (wr_en && !full) begin
+                rs_valid[free_slot]       <= 1'b1;
+                rs_prd[free_slot]         <= wr_prd;
+                rs_prs1[free_slot]        <= wr_prs1;
+                rs_prs2[free_slot]        <= wr_prs2;
+                rs_prs1_rdy[free_slot]    <= wr_prs1_ready;
+                // LOAD: rs2 không dùng → set ready=1 ngay
+                rs_prs2_rdy[free_slot]    <= (wr_is_load | wr_is_fp_load) ? 1'b1 : wr_prs2_ready;
+                rs_rs1_val[free_slot]     <= 32'd0;
+                rs_rs2_val[free_slot]     <= 32'd0;
+                rs_imm[free_slot]         <= wr_imm;
+                rs_lsu_op[free_slot]      <= wr_lsu_op;
+                rs_rob_idx[free_slot]     <= wr_rob_idx;
+                rs_is_load[free_slot]     <= wr_is_load;
+                rs_is_store[free_slot]    <= wr_is_store;
+                rs_is_fp_load[free_slot]  <= wr_is_fp_load;
+                rs_is_fp_store[free_slot] <= wr_is_fp_store;
+                rs_fp_rd[free_slot]       <= wr_fp_rd;
+                rs_fp_rs2[free_slot]      <= wr_fp_rs2;
+                rs_age[free_slot]         <= 1'b0;
+                for (i = 0; i < NUM_RS; i = i + 1)
+                    if (rs_valid[i] && i != free_slot) rs_age[i] <= 1'b1;
+            end
+
+            // ------------------------------------------------------------------
+            // 3. Issue
+            // ------------------------------------------------------------------
+            if (found_issue) begin
+                issue_valid       <= 1'b1;
+                issue_prd         <= rs_prd[issue_slot];
+                issue_rob_idx     <= rs_rob_idx[issue_slot];
+                issue_rs1_val     <= rs_prs1_rdy[issue_slot] ? rs_rs1_val[issue_slot] : prf_rs1_data;
+                issue_rs2_val     <= rs_prs2_rdy[issue_slot] ? rs_rs2_val[issue_slot] : prf_rs2_data;
+                issue_imm         <= rs_imm[issue_slot];
+                issue_lsu_op      <= rs_lsu_op[issue_slot];
+                issue_is_load     <= rs_is_load[issue_slot];
+                issue_is_store    <= rs_is_store[issue_slot];
+                issue_is_fp_load  <= rs_is_fp_load[issue_slot];
+                issue_is_fp_store <= rs_is_fp_store[issue_slot];
+                issue_fp_rd       <= rs_fp_rd[issue_slot];
+                issue_fp_rs2      <= rs_fp_rs2[issue_slot];
+                rs_valid[issue_slot] <= 1'b0;
+            end
+        end
+    end
+
+endmodule

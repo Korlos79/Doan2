@@ -1,0 +1,126 @@
+// =============================================================================
+// prf.v  —  Physical Register File  (Parameterized, Multi-Port)
+//
+// Dùng chung cho Int PRF và Float PRF.
+//
+// Số port:
+//   READ  : 4 port combinational (rs1_ALU, rs2_ALU, rs1_LSU, rs2_LSU)
+//           + 3 port riêng cho FPU (rs1, rs2, rs3)
+//           → Int PRF: 4 read port; Float PRF: 3 read port
+//           → Dùng parameter NUM_RD để cấu hình
+//   WRITE : 4 port (WB0=ALU-basic, WB1=ALU-muldiv, WB2=FPU, WB3=LSU-load)
+//           Chỉ 1-2 port thực sự active mỗi cycle;
+//           Priority: WB3 > WB2 > WB1 > WB0 nếu cùng tag (không xảy ra thực tế)
+//
+// ready[] bit:
+//   • Set khi WB ghi giá trị hợp lệ
+//   • Clear khi Rename cấp tag này cho lệnh mới (clear_en + clear_tag)
+//   • Bypass: nếu WB và read cùng tag trong cùng cycle → rd_data lấy từ WB
+//
+// Không cần xóa ready[] khi flush — tag bị flush sẽ không được issue
+// (ROB đã flush toàn bộ IQ; tag cũ trong PRF không ảnh hưởng vì RAT phục hồi)
+// =============================================================================
+
+module prf #(
+    parameter NUM_PHYS  = 64,
+    parameter NUM_ARCH  = 32,
+    parameter TAG_WIDTH = 6,
+    parameter NUM_RD    = 4     // Số read port: 4 cho Int, 3 cho Float
+)(
+    input  wire        clk,
+    input  wire        rst_n,
+
+    // =========================================================================
+    // READ ports (combinational, với WB bypass)
+    // =========================================================================
+    input  wire [TAG_WIDTH-1:0]  rd_tag  [0:NUM_RD-1],
+    output wire [31:0]           rd_data [0:NUM_RD-1],
+    output wire                  rd_ready[0:NUM_RD-1],
+
+    // =========================================================================
+    // WRITE ports (từ Execute Writeback)
+    // Mỗi cycle tối đa 4 port active; priority nếu cùng tag: wb3>wb2>wb1>wb0
+    // =========================================================================
+    input  wire                  wb0_en,
+    input  wire [TAG_WIDTH-1:0]  wb0_tag,
+    input  wire [31:0]           wb0_data,
+
+    input  wire                  wb1_en,
+    input  wire [TAG_WIDTH-1:0]  wb1_tag,
+    input  wire [31:0]           wb1_data,
+
+    input  wire                  wb2_en,
+    input  wire [TAG_WIDTH-1:0]  wb2_tag,
+    input  wire [31:0]           wb2_data,
+
+    input  wire                  wb3_en,
+    input  wire [TAG_WIDTH-1:0]  wb3_tag,
+    input  wire [31:0]           wb3_data,
+
+    // =========================================================================
+    // CLEAR ready (Rename: tag mới được cấp → clear ready của nó)
+    // =========================================================================
+    input  wire                  clear_en,
+    input  wire [TAG_WIDTH-1:0]  clear_tag
+);
+
+    reg [31:0] data  [0:NUM_PHYS-1];
+    reg        ready [0:NUM_PHYS-1];
+
+    // =========================================================================
+    // Bypass: giá trị WB "thắng" nếu tag khớp với rd_tag (cùng cycle)
+    // Priority khi nhiều WB cùng tag (lý thuyết không xảy ra): wb3 > wb2 > wb1 > wb0
+    // =========================================================================
+    genvar g;
+    generate
+        for (g = 0; g < NUM_RD; g = g + 1) begin : RD_PORT
+            wire wb0_hit = wb0_en && (wb0_tag == rd_tag[g]);
+            wire wb1_hit = wb1_en && (wb1_tag == rd_tag[g]);
+            wire wb2_hit = wb2_en && (wb2_tag == rd_tag[g]);
+            wire wb3_hit = wb3_en && (wb3_tag == rd_tag[g]);
+            wire any_hit = wb0_hit | wb1_hit | wb2_hit | wb3_hit;
+
+            assign rd_data[g]  = wb3_hit ? wb3_data :
+                                  wb2_hit ? wb2_data :
+                                  wb1_hit ? wb1_data :
+                                  wb0_hit ? wb0_data :
+                                            data[rd_tag[g]];
+
+            assign rd_ready[g] = any_hit | ready[rd_tag[g]];
+        end
+    endgenerate
+
+    // =========================================================================
+    // Sequential: write + clear
+    // =========================================================================
+    integer i;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            for (i = 0; i < NUM_PHYS; i = i + 1) begin
+                data[i]  <= 32'd0;
+                ready[i] <= (i < NUM_ARCH) ? 1'b1 : 1'b0;
+            end
+        end else begin
+            // -----------------------------------------------------------------
+            // Write (thứ tự: wb0 trước, wb3 sau → wb3 ghi đè nếu cùng tag)
+            // -----------------------------------------------------------------
+            if (wb0_en) begin data[wb0_tag] <= wb0_data; ready[wb0_tag] <= 1'b1; end
+            if (wb1_en) begin data[wb1_tag] <= wb1_data; ready[wb1_tag] <= 1'b1; end
+            if (wb2_en) begin data[wb2_tag] <= wb2_data; ready[wb2_tag] <= 1'b1; end
+            if (wb3_en) begin data[wb3_tag] <= wb3_data; ready[wb3_tag] <= 1'b1; end
+
+            // -----------------------------------------------------------------
+            // Clear ready: tag vừa được Rename cấp cho lệnh mới
+            // Chỉ clear nếu không có WB nào ghi vào cùng tag cycle này
+            // -----------------------------------------------------------------
+            if (clear_en) begin
+                if (!(  (wb0_en && wb0_tag == clear_tag) ||
+                        (wb1_en && wb1_tag == clear_tag) ||
+                        (wb2_en && wb2_tag == clear_tag) ||
+                        (wb3_en && wb3_tag == clear_tag) ))
+                    ready[clear_tag] <= 1'b0;
+            end
+        end
+    end
+
+endmodule

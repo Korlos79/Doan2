@@ -1,5 +1,5 @@
 module RAT_Int #(
-    parameter TAG_WIDTH = 6 // Chú ý: Đổi thành 6 bit cho 64 thanh ghi
+    parameter TAG_WIDTH = 7  // [FIX-FP-TAG] // Chú ý: Đổi thành 6 bit cho 64 thanh ghi
 )(
     input wire clk,
     input wire rst_n,
@@ -13,6 +13,10 @@ module RAT_Int #(
 
     input  wire [4:0]           rs2_addr,
     output wire [TAG_WIDTH-1:0] rs2_tag,
+
+    // Cổng đọc fRAT cho rd (để lấy old_prd lúc dispatch)
+    input  wire [4:0]           rd_addr,
+    output wire [TAG_WIDTH-1:0] rd_current_tag,  // = fRAT[rd] TRƯỚC khi rename
 
     // =========================================
     // 2. CỔNG ISSUE (Đổi tên thanh ghi đích)
@@ -37,12 +41,17 @@ module RAT_Int #(
     reg [TAG_WIDTH-1:0] aRAT [0:31]; // Architectural RAT (Sổ chính thức)
 
     // Lõi logic đọc (Luôn lấy từ fRAT)
-    assign rs1_tag = (rs1_addr == 0) ? {TAG_WIDTH{1'b0}} : fRAT[rs1_addr];
-    assign rs2_tag = (rs2_addr == 0) ? {TAG_WIDTH{1'b0}} : fRAT[rs2_addr];
+    assign rs1_tag        = (rs1_addr == 0) ? {TAG_WIDTH{1'b0}} : fRAT[rs1_addr];
+    assign rs2_tag        = (rs2_addr == 0) ? {TAG_WIDTH{1'b0}} : fRAT[rs2_addr];
+    assign rd_current_tag = (rd_addr   == 0) ? {TAG_WIDTH{1'b0}} : fRAT[rd_addr];  // old_prd tại dispatch
 
-    // Truy xuất Tag cũ từ aRAT để vứt vào Free List khi Commit thành công
-    assign old_pr_tag_to_free = aRAT[commit_rd];
-    assign free_tag_valid     = commit_valid && (commit_rd != 0); // Không bao giờ free PR 0 của x0
+    // Truy xuất Tag cũ từ fRAT (sổ nháp hiện tại, TRƯỚC khi rename)
+    // để lưu vào ROB.alloc_old_prd — khi commit sẽ trả về free list.
+    // [FIX] Dùng fRAT thay vì aRAT: aRAT chỉ cập nhật khi commit,
+    // nhưng old_prd cần là tag mà fRAT đang giữ LÚC dispatch (có thể là
+    // tag đã rename trước đó chưa commit).
+    assign old_pr_tag_to_free = aRAT[commit_rd];  // commit: trả old_prd của aRAT về free list
+    assign free_tag_valid     = commit_valid && (commit_rd != 0);
 
     integer i;
     always @(posedge clk or negedge rst_n) begin

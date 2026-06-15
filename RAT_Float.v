@@ -1,5 +1,9 @@
 module RAT_Float #(
-    parameter TAG_WIDTH = 6
+    parameter TAG_WIDTH = 7,   // [FIX-FP-TAG] 7-bit để chứa tag 0..127
+    // [FIX-FP-TAG] BASE_TAG: FP arch regs f0..f31 map đến tag BASE_TAG..BASE_TAG+31
+    // INT: BASE_TAG=0  → initial f/aRAT[i]=i (p0..p31)
+    // FP:  BASE_TAG=64 → initial f/aRAT[i]=i+64 (p64..p95)
+    parameter BASE_TAG  = 0
 )(
     input wire clk,
     input wire rst_n,
@@ -14,6 +18,10 @@ module RAT_Float #(
 
     input  wire [4:0]           rs3_addr,
     output wire [TAG_WIDTH-1:0] rs3_tag,
+
+    // Cổng đọc fRAT cho rd (lấy old_prd lúc dispatch)
+    input  wire [4:0]           rd_addr,
+    output wire [TAG_WIDTH-1:0] rd_current_tag,
 
     // Cổng Issue
     input  wire                 issue_valid,
@@ -32,9 +40,10 @@ module RAT_Float #(
     reg [TAG_WIDTH-1:0] fRAT [0:31];
     reg [TAG_WIDTH-1:0] aRAT [0:31];
 
-    assign rs1_tag = fRAT[rs1_addr];
-    assign rs2_tag = fRAT[rs2_addr];
-    assign rs3_tag = fRAT[rs3_addr];
+    assign rs1_tag        = fRAT[rs1_addr];
+    assign rs2_tag        = fRAT[rs2_addr];
+    assign rs3_tag        = fRAT[rs3_addr];
+    assign rd_current_tag = fRAT[rd_addr];  // old_prd tại dispatch
 
     assign old_pr_tag_to_free = aRAT[commit_rd];
     assign free_tag_valid     = commit_valid; // f0 vẫn được free bình thường
@@ -43,8 +52,8 @@ module RAT_Float #(
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (i=0; i<32; i=i+1) begin
-                fRAT[i] <= i;
-                aRAT[i] <= i;
+                fRAT[i] <= BASE_TAG + i;   // [FIX-FP-TAG]
+                aRAT[i] <= BASE_TAG + i;
             end
         end 
         else if (flush) begin

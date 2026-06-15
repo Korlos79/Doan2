@@ -1,0 +1,66 @@
+library verilog;
+use verilog.vl_types.all;
+entity iq_mem is
+    generic(
+        NUM_RS          : integer := 8;
+        TAG_WIDTH       : integer := 6;
+        ROB_IDX         : integer := 5
+    );
+    port(
+        clk             : in     vl_logic;
+        rst_n           : in     vl_logic;
+        flush           : in     vl_logic;
+        wr_en           : in     vl_logic;
+        wr_prd          : in     vl_logic_vector;
+        wr_prs1         : in     vl_logic_vector;
+        wr_prs1_ready   : in     vl_logic;
+        wr_prs2         : in     vl_logic_vector;
+        wr_prs2_ready   : in     vl_logic;
+        wr_prs1_data    : in     vl_logic_vector(31 downto 0);
+        wr_prs2_data    : in     vl_logic_vector(31 downto 0);
+        wr_imm          : in     vl_logic_vector(31 downto 0);
+        wr_lsu_op       : in     vl_logic_vector(2 downto 0);
+        wr_rob_idx      : in     vl_logic_vector;
+        wr_is_load      : in     vl_logic;
+        wr_is_store     : in     vl_logic;
+        wr_is_fp_load   : in     vl_logic;
+        wr_is_fp_store  : in     vl_logic;
+        wr_fp_rd        : in     vl_logic;
+        wr_fp_rs2       : in     vl_logic;
+        full            : out    vl_logic;
+        store_pending   : in     vl_logic;
+        cdb0_tag        : in     vl_logic_vector;
+        cdb0_valid      : in     vl_logic;
+        cdb0_data       : in     vl_logic_vector(31 downto 0);
+        cdb1_tag        : in     vl_logic_vector;
+        cdb1_valid      : in     vl_logic;
+        cdb1_data       : in     vl_logic_vector(31 downto 0);
+        cdb2_tag        : in     vl_logic_vector;
+        cdb2_valid      : in     vl_logic;
+        cdb2_data       : in     vl_logic_vector(31 downto 0);
+        cdb3_tag        : in     vl_logic_vector;
+        cdb3_valid      : in     vl_logic;
+        cdb3_data       : in     vl_logic_vector(31 downto 0);
+        prf_rs1_tag     : out    vl_logic_vector;
+        prf_rs2_tag     : out    vl_logic_vector;
+        prf_rs1_data    : in     vl_logic_vector(31 downto 0);
+        prf_rs2_data    : in     vl_logic_vector(31 downto 0);
+        issue_valid     : out    vl_logic;
+        issue_prd       : out    vl_logic_vector;
+        issue_rob_idx   : out    vl_logic_vector;
+        issue_rs1_val   : out    vl_logic_vector(31 downto 0);
+        issue_rs2_val   : out    vl_logic_vector(31 downto 0);
+        issue_imm       : out    vl_logic_vector(31 downto 0);
+        issue_lsu_op    : out    vl_logic_vector(2 downto 0);
+        issue_is_load   : out    vl_logic;
+        issue_is_store  : out    vl_logic;
+        issue_is_fp_load: out    vl_logic;
+        issue_is_fp_store: out    vl_logic;
+        issue_fp_rd     : out    vl_logic;
+        issue_fp_rs2    : out    vl_logic
+    );
+    attribute mti_svvh_generic_type : integer;
+    attribute mti_svvh_generic_type of NUM_RS : constant is 1;
+    attribute mti_svvh_generic_type of TAG_WIDTH : constant is 1;
+    attribute mti_svvh_generic_type of ROB_IDX : constant is 1;
+end iq_mem;

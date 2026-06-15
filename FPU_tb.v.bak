@@ -1,0 +1,230 @@
+`timescale 1ns/1ps
+
+module FPU_tb;
+
+    // =========================================================================
+    //  CLOCK & RESET GENERATION
+    // =========================================================================
+    reg clk;
+    reg rst_n;
+    
+    initial begin
+        clk = 0;
+        forever #5 clk = ~clk; // Chu kỳ 10ns (100MHz)
+    end
+
+    // =========================================================================
+    //  DUT INTERFACES
+    // =========================================================================
+    reg        start;
+    reg  [3:0] tag_in;
+    reg  [31:0] a_operand;
+    reg  [31:0] b_operand;
+    reg  [31:0] c_operand;
+    reg  [4:0]  FPUOpd;
+    
+    wire [31:0] result;
+    wire [3:0]  tag_out;
+    wire        done;
+    wire        Exception;
+
+    // Khởi tạo Device Under Test (DUT)
+    FPU DUT (
+        .clk(clk),
+        .rst_n(rst_n),
+        .start(start),
+        .tag_in(tag_in),
+        .a_operand(a_operand),
+        .b_operand(b_operand),
+        .c_operand(c_operand),
+        .FPUOpd(FPUOpd),
+        .result(result),
+        .tag_out(tag_out),
+        .done(done),
+        .Exception(Exception)
+    );
+
+    // =========================================================================
+    //  OPCODES MAPPING
+    // =========================================================================
+    localparam FADD  = 5'd0;
+    localparam FSUB  = 5'd1;
+    localparam FMUL  = 5'd2;
+    localparam FDIV  = 5'd3;
+    localparam FSQRT = 5'd4;
+
+    // =========================================================================
+    //  SCOREBOARD & AUTOMATIC CHECKER
+    // =========================================================================
+    typedef struct {
+        reg [4:0]  op;
+        reg [3:0]  tag;
+        reg [31:0] opA;
+        reg [31:0] opB;
+        reg [31:0] opC;
+    } fpu_trans_t;
+
+    // Scoreboard lưu vết lệnh đang nằm trong Pipeline dựa vào TAG làm khóa index
+    fpu_trans_t scoreboard[bit [3:0]];
+    int error_count = 0;
+    int test_count = 0;
+
+    function shortreal bits_to_float(input reg [31:0] in_bits);
+        return $bitstoshortreal(in_bits);
+    endfunction
+
+    function bit is_close_enough(input [31:0] act, input [31:0] exp);
+        shortreal diff;
+        diff = bits_to_float(act) - bits_to_float(exp);
+        if (diff < 0) diff = -diff;
+        return (diff < 0.0001); // Sai số cho phép do làm tròn tầng cuối
+    endfunction
+
+    // Monitor: Bắt gói dữ liệu ngõ vào khi start kích hoạt
+    always @(posedge clk) begin
+        if (rst_n && start) begin
+            fpu_trans_t tx;
+            tx.op   = FPUOpd;
+            tx.tag  = tag_in;
+            tx.opA  = a_operand;
+            tx.opB  = b_operand;
+            tx.opC  = c_operand;
+            scoreboard[tag_in] = tx;
+            test_count++;
+        end
+    end
+
+    // Checker: Kiểm tra kết quả tự động từ DUT bất kể trật tự Out-of-Order
+    always @(posedge clk) begin
+        if (rst_n && done) begin
+            fpu_trans_t ref_tx;
+            reg [31:0] expected_result;
+            shortreal  fA, fB, fC;
+            
+            if (!scoreboard.exists(tag_out)) begin
+                $display("[ERROR @ %0t ns] TAG_OUT = %d không khớp với bất kỳ lệnh nào trong Scoreboard!", $time, tag_out);
+                error_count++;
+            end else begin
+                ref_tx = scoreboard[tag_out];
+                fA = bits_to_float(ref_tx.opA);
+                fB = bits_to_float(ref_tx.opB);
+                fC = bits_to_float(ref_tx.opC);
+
+                case (ref_tx.op)
+                    FADD: expected_result = $shortrealtobits(fA + fB);
+                    FSUB: expected_result = $shortrealtobits(fA - fB);
+                    FMUL: expected_result = $shortrealtobits(fA * fB);
+                    FDIV: expected_result = $shortrealtobits(fA / fB);
+                    default: expected_result = result;
+                endcase
+
+                if (!is_close_enough(result, expected_result) && result !== expected_result) begin
+                    $display("[MISMATCH @ %0t ns] Op: %0d, TAG: %0d | DUT: Hex %h (%f) != KỲ VỌNG: Hex %h (%f)", 
+                              $time, ref_tx.op, tag_out, result, bits_to_float(result), expected_result, bits_to_float(expected_result));
+                    error_count++;
+                end else begin
+                    $display("[PASS @ %0t ns] Hoàn thành Op: %0d, TAG: %0d | Kết quả DUT: %f khớp mô hình tham chiếu.", 
+                              $time, ref_tx.op, tag_out, bits_to_float(result));
+                end
+                scoreboard.delete(tag_out);
+            end
+        end
+    end
+
+    // =========================================================================
+    //  STIMULUS TASK
+    // =========================================================================
+    task send_cmd(
+        input [4:0]  op,
+        input [3:0]  tag,
+        input [31:0] valA,
+        input [31:0] valB,
+        input [31:0] valC
+    );
+    begin
+        @(posedge clk);
+        start     <= 1'b1;
+        FPUOpd    <= op;
+        tag_in    <= tag;
+        a_operand <= valA;
+        b_operand <= valB;
+        c_operand <= valC;
+        @(posedge clk);
+        start     <= 1'b0;
+    end
+    endtask
+
+    // Khai báo sẵn các hằng số Số thực chuẩn IEEE-754
+    reg [31:0] FLOAT_9_0  = $shortrealtobits(9.0);
+    reg [31:0] FLOAT_2_0  = $shortrealtobits(2.0);
+    reg [31:0] FLOAT_11_0 = $shortrealtobits(11.0); // (9.0 + 2.0)
+    reg [31:0] FLOAT_1_5  = $shortrealtobits(1.5);
+
+    // =========================================================================
+    //  KỊCH BẢN KIỂM THỬ (TEST CASES)
+    // =========================================================================
+    initial begin
+        // Khởi tạo các tín hiệu ban đầu
+        start     = 0;
+        tag_in    = 0;
+        a_operand = 0;
+        b_operand = 0;
+        c_operand = 0;
+        FPUOpd    = 0;
+        rst_n     = 0;
+        
+        #40;
+        rst_n     = 1; // Nhả reset giải phóng mạch
+        #20;
+
+        $display("=========================================================");
+        $display(" BẮT ĐẦU CHẠY KIỂM THỬ: FADD TRƯỚC FSUB");
+        $display("=========================================================");
+
+        // ---------------------------------------------------------------------
+        // KỊCH BẢN CHÍNH: LỆNH CỘNG (FADD) NGAY TRƯỚC LỆNH TRỪ (FSUB)
+        // Mô phỏng chuỗi lệnh:
+        // Lệnh 1 (TAG=1): fadd.s f3, f1, f2  -> (9.0 + 2.0 = 11.0)
+        // Lệnh 2 (TAG=2): fsub.s f4, f3, f2  -> (11.0 - 2.0 = 9.0)
+        // ---------------------------------------------------------------------
+        $display("\n---> [BƯỚC 1] Phát lệnh FADD (TAG=1) và FSUB (TAG=2) liên tiếp...");
+        
+        // 1. Phát lệnh FADD (Sử dụng module addition_subtraction mất 4 chu kỳ)
+        send_cmd(FADD, 4'd1, FLOAT_9_0, FLOAT_2_0, 32'd0);
+        
+        // 2. Ngay chu kỳ tiếp theo, phát lệnh FSUB kế tiếp (Cùng dùng chung module)
+        // Do thiết kế FPU của bạn sử dụng thanh ghi đệm dịch chu kỳ (add_start_r), 
+        // lệnh FSUB này sẽ được nạp gối đầu ngay sau FADD.
+        send_cmd(FSUB, 4'd2, FLOAT_11_0, FLOAT_2_0, 32'd0);
+
+        // Chờ pipeline xử lý xong cả 2 lệnh (Mất khoảng 4 chu kỳ cho FADD + 1 chu kỳ gối đầu = 5 chu kỳ)
+        #80;
+
+        // ---------------------------------------------------------------------
+        // KỊCH BẢN NÂNG CAO: NHỒI PIPELINE XEN KẼ KHÁC ĐỘ TRỄ (STRUCTURAL HAZARD)
+        // Kiểm tra xem mạch dồn luồng kết quả đầu ra có bị loạn TAG không
+        // ---------------------------------------------------------------------
+        $display("\n---> [BƯỚC 2] Kiểm tra nhồi gối đầu FADD trước FSUB kết hợp FMUL...");
+        
+        send_cmd(FADD, 4'd4, FLOAT_9_0, FLOAT_1_5, 32'd0);  // Tính: 9.0 + 1.5 = 10.5 (Xong sau 4 chu kỳ)
+        send_cmd(FSUB, 4'd5, FLOAT_9_0, FLOAT_2_0, 32'd0);  // Tính: 9.0 - 2.0 = 7.0  (Xong sau 5 chu kỳ)
+        send_cmd(FMUL, 4'd6, FLOAT_2_0, FLOAT_1_5, 32'd0);  // Tính: 2.0 * 1.5 = 3.0  (Xong sau 3 chu kỳ - Vượt mặt!)
+
+        #150; // Chờ xả hết pipeline
+
+        // =========================================================================
+        //  TỔNG KẾT KIỂM THỬ
+        // =========================================================================
+        $display("\n=========================================================");
+        $display(" KẾT QUẢ KIỂM THỬ CUỐI CÙNG:");
+        $display("  - Tổng số lệnh FPU đã kiểm tra: %0d", test_count);
+        if (error_count == 0) begin
+            $display("  => THÀNH CÔNG: Mạch FPU hoạt động đúng kịch bản FADD đứng trước FSUB!");
+        end else begin
+            $display("  => THẤT BẠI: Phát hiện %0d lỗi tính toán hoặc sai lệch TAG.", error_count);
+        end
+        $display("=========================================================");
+        $finish;
+    end
+
+endmodule

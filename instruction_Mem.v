@@ -5,12 +5,7 @@ module instruction_Mem (
    reg [31:0] i_mem [63:0]; 
 	
 	initial begin
-		//$readmemb ("TestCase/R_I_type.txt", i_mem);
-		//$readmemb ("TestCase/lui_load_store.txt", i_mem);
-		//$readmemb ("TestCase/branch.txt", i_mem);
-		//$readmemb ("TestCase/auipc_jal_jalr.txt", i_mem);
-		//$readmemb ("TestCase/fibo_10.txt", i_mem);
-		$readmemb ("TestCase/hazard.txt", i_mem);
+		$readmemh ("D:/RISCV_Pipelined_IFM_AXI4_OoO_v2/TestCase/FP.txt", i_mem);
    end
 	 
 	always @(*) begin
